@@ -10,16 +10,24 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/joho/godotenv"
 	"github.com/thogio8/task-forge/internal/handler"
 )
 
 func main() {
 	if err := godotenv.Load(); err != nil {
-		log.Fatal("Error loading .env file : ", err)
+		log.Println("No .env file found, using environment variables")
 	}
 
-	db, err := pgxpool.New(context.Background(), os.Getenv("DB_CONN_STRING"))
+	dsn := fmt.Sprintf("host=%s port=5432 user=%s password=%s dbname=%s sslmode=disable",
+		os.Getenv("DB_HOST"),
+		os.Getenv("POSTGRES_USER"),
+		os.Getenv("POSTGRES_PASSWORD"),
+		os.Getenv("POSTGRES_DB"),
+	)
+
+	db, err := pgxpool.New(context.Background(), dsn)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -34,6 +42,7 @@ func main() {
 	taskHandler := &handler.TaskHandler{DB: db}
 
 	router := chi.NewRouter()
+	router.Use(middleware.Logger)
 	router.HandleFunc("/health", healthCheck)
 	router.Post("/tasks", taskHandler.CreateTask)
 	router.Get("/tasks", taskHandler.GetTasks)
