@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 )
@@ -14,6 +15,8 @@ type Config struct {
 	DBPassword string
 	DBName     string
 	DBSSLMode  string
+	LogLevel   string
+	LogFormat  string
 }
 
 func Load() (Config, error) {
@@ -24,6 +27,8 @@ func Load() (Config, error) {
 	cfg.HTTPPort = getEnvOrDefault("HTTP_PORT", "8080")
 	cfg.DBPort = getEnvOrDefault("DB_PORT", "5432")
 	cfg.DBSSLMode = getEnvOrDefault("DB_SSL_MODE", "disable")
+	cfg.LogLevel = getEnvOrDefault("LOG_LEVEL", "info")
+	cfg.LogFormat = getEnvOrDefault("LOG_FORMAT", "json")
 
 	// Required fields
 	cfg.DBHost, missing = getEnvRequired("DB_HOST", missing)
@@ -49,6 +54,37 @@ func (c *Config) DatabaseURL() string {
 		c.DBName,
 		c.DBSSLMode,
 	)
+}
+
+func (c *Config) GetSlogLogger() *slog.Logger {
+	var logLevel slog.Level
+	var logHandler slog.Handler
+
+	switch c.LogLevel {
+	case "error":
+		logLevel = slog.LevelError
+	case "warn":
+		logLevel = slog.LevelWarn
+	case "debug":
+		logLevel = slog.LevelDebug
+	case "info":
+		logLevel = slog.LevelInfo
+	default:
+		logLevel = slog.LevelInfo
+	}
+
+	logHandlerOpts := slog.HandlerOptions{Level: logLevel}
+
+	switch c.LogFormat {
+	case "text":
+		logHandler = slog.NewTextHandler(os.Stdout, &logHandlerOpts)
+	case "json":
+		logHandler = slog.NewJSONHandler(os.Stdout, &logHandlerOpts)
+	default:
+		logHandler = slog.NewJSONHandler(os.Stdout, &logHandlerOpts)
+	}
+
+	return slog.New(logHandler)
 }
 
 func getEnvOrDefault(key, defaultValue string) string {

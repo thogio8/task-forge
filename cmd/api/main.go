@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
@@ -23,20 +24,24 @@ func main() {
 	cfg, err := config.Load()
 
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("Failed to load config : ", err)
 	}
+
+	logger := cfg.GetSlogLogger()
 
 	db, err := pgxpool.New(context.Background(), cfg.DatabaseURL())
 	if err != nil {
-		log.Fatal(err)
+		logger.Error("Failed to connect to DB", "error", err)
+		os.Exit(1)
 	}
 	defer db.Close()
 
 	if err := db.Ping(context.Background()); err != nil {
-		log.Fatal("Cannot reach DB : ", err)
+		logger.Error("Cannot reach DB", "error", err)
+		os.Exit(1)
 	}
 
-	fmt.Println("DB connected")
+	logger.Info("DB Connected")
 
 	taskHandler := &handler.TaskHandler{DB: db}
 
@@ -46,9 +51,10 @@ func main() {
 	router.Post("/tasks", taskHandler.CreateTask)
 	router.Get("/tasks", taskHandler.GetTasks)
 
-	log.Printf("Server running on port : %s", cfg.HTTPPort)
+	logger.Info("server starting", "port", cfg.HTTPPort)
 	if err := http.ListenAndServe(":"+cfg.HTTPPort, router); err != nil {
-		log.Fatal(err)
+		logger.Error("http server error", "error", err)
+		os.Exit(1)
 	}
 }
 
