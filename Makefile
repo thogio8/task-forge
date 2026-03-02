@@ -1,5 +1,5 @@
 .PHONY: up down build logs logs-app logs-db restart db-shell app-shell \
-       migrate-up migrate-down migrate-create migrate-status
+       migrate-up migrate-down migrate-create migrate-status migrate-force
 
 include .env
 export
@@ -44,6 +44,10 @@ migrate-down:
 migrate-status:
 	docker run --rm --network host -v $(PWD)/migrations:/migrations migrate/migrate \
 		-path=/migrations -database "$(DB_URL)" version
+
+migrate-force:
+	docker run --rm --network host -v $(PWD)/migrations:/migrations migrate/migrate \
+		-path=/migrations -database "$(DB_URL)" force $(version)
 
 migrate-create:
 	docker run --rm -v $(PWD)/migrations:/migrations migrate/migrate \
