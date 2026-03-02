@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -47,7 +46,7 @@ func main() {
 
 	router := chi.NewRouter()
 	router.Use(middleware.Logger)
-	router.HandleFunc("/health", healthCheck)
+	router.HandleFunc("/health", handler.HealthCheck)
 	router.Post("/tasks", taskHandler.CreateTask)
 	router.Get("/tasks", taskHandler.GetTasks)
 
@@ -56,8 +55,4 @@ func main() {
 		logger.Error("http server error", "error", err)
 		os.Exit(1)
 	}
-}
-
-func healthCheck(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "OK")
 }
