@@ -4,7 +4,7 @@
 include .env
 export
 
-DB_URL = postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/$(POSTGRES_DB)?sslmode=disable
+DB_URL = postgres://$(DB_USER):$(DB_PASSWORD)@localhost:$(DB_PORT)/$(DB_NAME)?sslmode=$(DB_SSL_MODE)
 
 up:
 	docker compose up -d --build
@@ -28,7 +28,7 @@ restart:
 	docker compose restart
 
 db-shell:
-	docker exec -it taskforge_db psql -U taskforge -d taskforge
+	docker exec -it taskforge_db psql -U $(DB_USER) -d $(DB_NAME)
 
 app-shell:
 	docker exec -it taskforge_app sh
