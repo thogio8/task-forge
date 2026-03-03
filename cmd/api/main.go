@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/thogio8/task-forge/internal/config"
 	"github.com/thogio8/task-forge/internal/handler"
+	"github.com/thogio8/task-forge/internal/repository"
 )
 
 func main() {
@@ -42,13 +43,17 @@ func main() {
 
 	logger.Info("DB Connected")
 
-	taskHandler := &handler.TaskHandler{DB: db}
+	taskRepo := repository.NewTaskRepository(db, logger)
+	taskHandler := handler.NewTaskHandler(taskRepo, logger)
 
 	router := chi.NewRouter()
 	router.Use(middleware.Logger)
-	router.HandleFunc("/health", handler.HealthCheck)
+
+	router.Get("/health", handler.HealthCheck)
 	router.Post("/tasks", taskHandler.CreateTask)
 	router.Get("/tasks", taskHandler.GetTasks)
+	router.Get("/tasks/{id}", taskHandler.GetTask)
+	router.Patch("/tasks/{id}/status", taskHandler.UpdateTaskStatus)
 
 	logger.Info("server starting", "port", cfg.HTTPPort)
 	if err := http.ListenAndServe(":"+cfg.HTTPPort, router); err != nil {
