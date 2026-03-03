@@ -5,6 +5,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
@@ -34,7 +37,6 @@ func main() {
 		logger.Error("Failed to connect to DB", "error", err)
 		os.Exit(1)
 	}
-	defer db.Close()
 
 	if err := db.Ping(context.Background()); err != nil {
 		logger.Error("Cannot reach DB", "error", err)
@@ -56,8 +58,31 @@ func main() {
 	router.Patch("/tasks/{id}/status", taskHandler.UpdateTaskStatus)
 
 	logger.Info("server starting", "port", cfg.HTTPPort)
-	if err := http.ListenAndServe(":"+cfg.HTTPPort, router); err != nil {
-		logger.Error("http server error", "error", err)
-		os.Exit(1)
+	httpServer := &http.Server{
+		Addr:         ":" + cfg.HTTPPort,
+		Handler:      router,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
+
+	go func() {
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error("http server error", "error", err)
+			os.Exit(1)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	logger.Info("shutting down server")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := httpServer.Shutdown(ctx); err != nil {
+		logger.Error("server shutdown error", "error", err)
+	}
+	db.Close()
+	logger.Info("server stopped")
 }
