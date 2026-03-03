@@ -15,6 +15,9 @@ down:
 build:
 	docker compose build
 
+test:
+    go test ./... -v
+
 logs:
 	docker compose logs -f
 
