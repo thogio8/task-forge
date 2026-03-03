@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -10,16 +11,22 @@ import (
 	"github.com/google/uuid"
 	"github.com/thogio8/task-forge/internal/apperror"
 	"github.com/thogio8/task-forge/internal/model"
-	"github.com/thogio8/task-forge/internal/repository"
 )
 
-type TaskHandler struct {
-	repo   *repository.TaskRepository
-	logger *slog.Logger
+type TaskStore interface {
+	Create(ctx context.Context, task *model.Task) error
+	GetAll(ctx context.Context) ([]model.Task, error)
+	GetById(ctx context.Context, id uuid.UUID) (model.Task, error)
+	UpdateStatus(ctx context.Context, id uuid.UUID, status string) error
 }
 
-func NewTaskHandler(repo *repository.TaskRepository, logger *slog.Logger) *TaskHandler {
-	return &TaskHandler{repo: repo, logger: logger}
+type TaskHandler struct {
+	taskStore TaskStore
+	logger    *slog.Logger
+}
+
+func NewTaskHandler(taskStore TaskStore, logger *slog.Logger) *TaskHandler {
+	return &TaskHandler{taskStore: taskStore, logger: logger}
 }
 
 type CreateTaskRequest struct {
@@ -81,7 +88,7 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 		Payload: req.Payload,
 	}
 
-	if err := h.repo.Create(r.Context(), &task); err != nil {
+	if err := h.taskStore.Create(r.Context(), &task); err != nil {
 		h.handleError(w, err)
 		return
 	}
@@ -90,7 +97,7 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TaskHandler) GetTasks(w http.ResponseWriter, r *http.Request) {
-	tasks, err := h.repo.GetAll(r.Context())
+	tasks, err := h.taskStore.GetAll(r.Context())
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -113,7 +120,7 @@ func (h *TaskHandler) GetTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	task, err := h.repo.GetById(r.Context(), id)
+	task, err := h.taskStore.GetById(r.Context(), id)
 	if err != nil {
 		h.handleError(w, err)
 		return
@@ -144,7 +151,7 @@ func (h *TaskHandler) UpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.repo.UpdateStatus(r.Context(), id, req.Status); err != nil {
+	if err := h.taskStore.UpdateStatus(r.Context(), id, req.Status); err != nil {
 		h.handleError(w, err)
 		return
 	}
