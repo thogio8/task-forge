@@ -23,7 +23,7 @@ func Load() (Config, error) {
 	cfg := Config{}
 	var missing []string
 
-	// Optionnal fields
+	// Optional fields
 	cfg.HTTPPort = getEnvOrDefault("HTTP_PORT", "8080")
 	cfg.DBPort = getEnvOrDefault("DB_PORT", "5432")
 	cfg.DBSSLMode = getEnvOrDefault("DB_SSL_MODE", "disable")
