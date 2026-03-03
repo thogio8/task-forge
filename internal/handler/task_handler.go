@@ -84,7 +84,7 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	task := model.Task{
-		Status:  "pending",
+		Status:  model.StatusPending,
 		Payload: req.Payload,
 	}
 
@@ -148,6 +148,11 @@ func (h *TaskHandler) UpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 
 	if req.Status == "" {
 		Error(w, http.StatusBadRequest, "status is required")
+		return
+	}
+
+	if !model.IsValidStatus(req.Status) {
+		Error(w, http.StatusBadRequest, "invalid status")
 		return
 	}
 

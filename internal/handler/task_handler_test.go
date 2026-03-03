@@ -436,3 +436,27 @@ func TestUpdateStatus_RepoError(t *testing.T) {
 		t.Errorf("got %v, want %v", recorder.Code, http.StatusInternalServerError)
 	}
 }
+
+func TestUpdateStatus_InvalidStatus(t *testing.T) {
+	mock := &mockTaskStore{
+		UpdateStatusFunc: func(ctx context.Context, id uuid.UUID, status string) error {
+			return nil
+		},
+	}
+
+	taskHandler := NewTaskHandler(mock, slog.Default())
+
+	request := httptest.NewRequest("PATCH", "/tasks/{id}/status", strings.NewReader(`{"status": "banane"}`))
+	recorder := httptest.NewRecorder()
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", uuid.New().String())
+
+	request = request.WithContext(context.WithValue(request.Context(), chi.RouteCtxKey, rctx))
+
+	taskHandler.UpdateTaskStatus(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Errorf("got %v, want %v", recorder.Code, http.StatusBadRequest)
+	}
+}
