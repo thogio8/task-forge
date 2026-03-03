@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -31,6 +32,7 @@ func main() {
 	}
 
 	logger := cfg.GetSlogLogger()
+	slog.SetDefault(logger)
 
 	db, err := pgxpool.New(context.Background(), cfg.DatabaseURL())
 	if err != nil {
