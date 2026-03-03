@@ -104,6 +104,6 @@ func (t *TaskRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status 
 		return apperror.NotFound("task not found", nil)
 	}
 
-	t.logger.Info("task updated", "task_id", id)
+	t.logger.Info("task updated", "task_id", id, "new_status", status)
 	return nil
 }
