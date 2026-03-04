@@ -1,4 +1,4 @@
-.PHONY: up down build test logs logs-app logs-db restart db-shell app-shell \
+.PHONY: up down build test test-unit test-integration test-all logs logs-app logs-db restart db-shell app-shell \
        migrate-up migrate-down migrate-create migrate-status migrate-force
 
 include .env
@@ -15,8 +15,15 @@ down:
 build:
 	docker compose build
 
-test:
-	go test ./... -v
+test: test-unit
+
+test-unit:
+	go test ./... -v -count=1
+
+test-integration:
+	go test ./... -v -count=1 -tags=integration
+
+test-all: test-unit test-integration
 
 logs:
 	docker compose logs -f
