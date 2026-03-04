@@ -21,7 +21,7 @@ test-unit:
 	go test ./... -v -count=1
 
 test-integration:
-	go test ./... -v -count=1 -tags=integration
+	DB_HOST=localhost go test ./... -v -count=1 -tags=integration
 
 test-all: test-unit test-integration
 
