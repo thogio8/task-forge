@@ -125,7 +125,7 @@ func TestExecute_HandleError(t *testing.T) {
 	}
 
 	if mock.lastErrMsg != "something broke" {
-		t.Fatalf("expected error message 'somethin broke', got: '%s'", mock.lastErrMsg)
+		t.Fatalf("expected error message 'something broke', got: '%s'", mock.lastErrMsg)
 	}
 }
 
