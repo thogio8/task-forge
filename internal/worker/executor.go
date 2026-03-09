@@ -41,7 +41,9 @@ func (e *Executor) Execute(ctx context.Context, task model.Task) {
 
 	if err != nil {
 		e.logger.Error("invalid payload", "task_id", task.ID, "error", err)
-		e.repo.FailTask(ctx, task.ID, "invalid payload: "+err.Error(), nil)
+		if failErr := e.repo.FailTask(ctx, task.ID, "invalid payload: "+err.Error(), nil); failErr != nil {
+			e.logger.Error("failed to fail task with invalid payload", "task_id", task.ID, "error", failErr)
+		}
 		return
 	}
 
@@ -49,7 +51,9 @@ func (e *Executor) Execute(ctx context.Context, task model.Task) {
 
 	if !exists {
 		e.logger.Error("unknown task type", "task_id", task.ID, "type", payload.Type)
-		e.repo.FailTask(ctx, task.ID, "unknown task type: "+payload.Type, nil)
+		if failErr := e.repo.FailTask(ctx, task.ID, "unknown task type: "+payload.Type, nil); failErr != nil {
+			e.logger.Error("failed to fail task with unknown type", "task_id", task.ID, "error", failErr)
+		}
 		return
 	}
 
