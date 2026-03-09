@@ -40,7 +40,7 @@ func (e *Executor) Execute(ctx context.Context, task model.Task) {
 	err := json.Unmarshal(task.Payload, &payload)
 
 	if err != nil {
-		e.logger.Error("invalid payload", "error", err)
+		e.logger.Error("invalid payload", "task_id", task.ID, "error", err)
 		e.repo.FailTask(ctx, task.ID, "invalid payload: "+err.Error(), nil)
 		return
 	}
