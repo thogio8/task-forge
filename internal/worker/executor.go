@@ -47,6 +47,14 @@ func (e *Executor) Execute(ctx context.Context, task model.Task) {
 		return
 	}
 
+	if payload.Type == "" {
+		e.logger.Error("missing task type in payload", "task_id", task.ID)
+		if failErr := e.repo.FailTask(ctx, task.ID, "missing task type in payload", nil); failErr != nil {
+			e.logger.Error("failed to fail task with missing type", "task_id", task.ID, "error", failErr)
+		}
+		return
+	}
+
 	handler, exists := e.handlers[payload.Type]
 
 	if !exists {
