@@ -165,6 +165,32 @@ func TestExecute_Timeout(t *testing.T) {
 	}
 }
 
+func TestExecute_InvalidPayload(t *testing.T) {
+	mock := &mockRepo{}
+
+	executor := NewExecutor(mock, 5*time.Second, testLogger)
+
+	task := model.Task{
+		ID:         uuid.New(),
+		Payload:    json.RawMessage(`not json`),
+		MaxRetries: 3,
+	}
+
+	executor.Execute(context.Background(), task)
+
+	if len(mock.completedIDs) != 0 {
+		t.Fatalf("expected 0 completed, got %d", len(mock.completedIDs))
+	}
+
+	if len(mock.failedIDs) != 1 {
+		t.Fatalf("expected 1 failed, got %d", len(mock.failedIDs))
+	}
+
+	if mock.lastRetryAt != nil {
+		t.Fatal("expected permanent failure (no retry)")
+	}
+}
+
 func TestCalculateBackoff(t *testing.T) {
 	var backoff time.Duration
 
