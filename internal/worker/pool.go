@@ -42,3 +42,7 @@ func (p *Pool) Stop() {
 	close(p.tasks)
 	p.wg.Wait()
 }
+
+func (p *Pool) Tasks() chan model.Task {
+	return p.tasks
+}

@@ -17,7 +17,10 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/thogio8/task-forge/internal/config"
 	"github.com/thogio8/task-forge/internal/handler"
+	"github.com/thogio8/task-forge/internal/model"
 	"github.com/thogio8/task-forge/internal/repository"
+	"github.com/thogio8/task-forge/internal/worker"
+	"github.com/thogio8/task-forge/internal/worker/handlers"
 )
 
 func main() {
@@ -50,6 +53,40 @@ func main() {
 	taskRepo := repository.NewTaskRepository(db, logger)
 	taskHandler := handler.NewTaskHandler(taskRepo, logger)
 
+	executor := worker.NewExecutor(taskRepo, cfg.WorkerTaskTimeout, logger)
+
+	executor.Register("echo", handlers.Echo(logger))
+
+	pool := worker.NewPool(cfg.WorkerPoolSize, func(task model.Task) { executor.Execute(context.Background(), task) }, logger)
+
+	pool.Start()
+
+	dispatcher := worker.NewDispatcher(taskRepo, pool.Tasks(), cfg.WorkerPollInterval, cfg.WorkerBatchSize, logger)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	go dispatcher.Run(ctx)
+
+	go func() {
+		ticker := time.NewTicker(cfg.WorkerStaleInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				count, err := taskRepo.UnlockStaleTasks(ctx, cfg.WorkerStaleDuration)
+				if err != nil {
+					logger.Error("failed to unlock stale tasks", "error", err)
+				}
+				if count > 0 {
+					logger.Info("unlocked stale tasks", "count", count)
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	router := chi.NewRouter()
 	router.Use(middleware.Logger)
 
@@ -80,9 +117,12 @@ func main() {
 	<-quit
 	logger.Info("shutting down server")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if err := httpServer.Shutdown(ctx); err != nil {
+	cancel()
+	pool.Stop()
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		logger.Error("server shutdown error", "error", err)
 	}
 	db.Close()
