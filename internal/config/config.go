@@ -4,19 +4,25 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 )
 
 type Config struct {
-	HTTPPort   string
-	DBHost     string
-	DBPort     string
-	DBUser     string
-	DBPassword string
-	DBName     string
-	DBSSLMode  string
-	LogLevel   string
-	LogFormat  string
+	HTTPPort           string
+	DBHost             string
+	DBPort             string
+	DBUser             string
+	DBPassword         string
+	DBName             string
+	DBSSLMode          string
+	LogLevel           string
+	LogFormat          string
+	WorkerPoolSize     int
+	WorkerPollInterval time.Duration
+	WorkerBatchSize    int
+	WorkerTaskTimeout  time.Duration
 }
 
 func Load() (Config, error) {
@@ -29,6 +35,10 @@ func Load() (Config, error) {
 	cfg.DBSSLMode = getEnvOrDefault("DB_SSL_MODE", "disable")
 	cfg.LogLevel = getEnvOrDefault("LOG_LEVEL", "info")
 	cfg.LogFormat = getEnvOrDefault("LOG_FORMAT", "json")
+	cfg.WorkerPoolSize = getEnvOrDefaultInt("WORKER_POOL_SIZE", 5)
+	cfg.WorkerPollInterval = getEnvOrDefaultDuration("WORKER_POLL_INTERVAL", 2*time.Second)
+	cfg.WorkerBatchSize = getEnvOrDefaultInt("WORKER_BATCH_SIZE", 10)
+	cfg.WorkerTaskTimeout = getEnvOrDefaultDuration("WORKER_TASK_TIMEOUT", 30*time.Second)
 
 	// Required fields
 	cfg.DBHost, missing = getEnvRequired("DB_HOST", missing)
@@ -95,6 +105,38 @@ func getEnvOrDefault(key, defaultValue string) string {
 	}
 
 	return defaultValue
+}
+
+func getEnvOrDefaultInt(key string, defaultValue int) int {
+	envValue := os.Getenv(key)
+
+	if envValue == "" {
+		return defaultValue
+	}
+
+	result, err := strconv.Atoi(envValue)
+
+	if err != nil {
+		return defaultValue
+	}
+
+	return result
+}
+
+func getEnvOrDefaultDuration(key string, defaultValue time.Duration) time.Duration {
+	envValue := os.Getenv(key)
+
+	if envValue == "" {
+		return defaultValue
+	}
+
+	result, err := time.ParseDuration(envValue)
+
+	if err != nil {
+		return defaultValue
+	}
+
+	return result
 }
 
 func getEnvRequired(key string, missing []string) (string, []string) {

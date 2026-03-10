@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoad_AllVarsSet(t *testing.T) {
@@ -64,6 +65,50 @@ func TestLoad_DefaultsApplied(t *testing.T) {
 
 	if cfg.LogFormat != "json" {
 		t.Errorf("expected LogFormat to be 'json', got %s", cfg.LogFormat)
+	}
+
+	if cfg.WorkerPoolSize != 5 {
+		t.Errorf("expected WorkerPoolSize to be 5, got %d", cfg.WorkerPoolSize)
+	}
+
+	if cfg.WorkerPollInterval != 2*time.Second {
+		t.Errorf("expected WorkerPollInterval to be 2 seconds, got %v", cfg.WorkerPollInterval)
+	}
+
+	if cfg.WorkerBatchSize != 10 {
+		t.Errorf("expected WorkerBatchSize to be 10, got %d", cfg.WorkerBatchSize)
+	}
+
+	if cfg.WorkerTaskTimeout != 30*time.Second {
+		t.Errorf("expected WorkerTaskTimeout to be 30 seconds, got %v", cfg.WorkerTaskTimeout)
+	}
+}
+
+func TestLoad_DefaultsOverride(t *testing.T) {
+	t.Setenv("HTTP_PORT", "433")
+	t.Setenv("WORKER_POOL_SIZE", "50")
+	t.Setenv("WORKER_POLL_INTERVAL", "10s")
+	t.Setenv("DB_HOST", "localhost")
+	t.Setenv("DB_USER", "testuser")
+	t.Setenv("DB_PASSWORD", "testpassword")
+	t.Setenv("DB_NAME", "testdb")
+
+	cfg, err := Load()
+
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+
+	if cfg.HTTPPort != "433" {
+		t.Errorf("expected HTTPPort to be '433', got %s", cfg.HTTPPort)
+	}
+
+	if cfg.WorkerPoolSize != 50 {
+		t.Errorf("expected WorkerPoolSize to be 50, got %d", cfg.WorkerPoolSize)
+	}
+
+	if cfg.WorkerPollInterval != 10*time.Second {
+		t.Errorf("expected WorkerPollInterval to be 10 seconds, got %v", cfg.WorkerPollInterval)
 	}
 }
 
