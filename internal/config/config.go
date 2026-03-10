@@ -10,19 +10,21 @@ import (
 )
 
 type Config struct {
-	HTTPPort           string
-	DBHost             string
-	DBPort             string
-	DBUser             string
-	DBPassword         string
-	DBName             string
-	DBSSLMode          string
-	LogLevel           string
-	LogFormat          string
-	WorkerPoolSize     int
-	WorkerPollInterval time.Duration
-	WorkerBatchSize    int
-	WorkerTaskTimeout  time.Duration
+	HTTPPort            string
+	DBHost              string
+	DBPort              string
+	DBUser              string
+	DBPassword          string
+	DBName              string
+	DBSSLMode           string
+	LogLevel            string
+	LogFormat           string
+	WorkerPoolSize      int
+	WorkerPollInterval  time.Duration
+	WorkerBatchSize     int
+	WorkerTaskTimeout   time.Duration
+	WorkerStaleInterval time.Duration
+	WorkerStaleDuration time.Duration
 }
 
 func Load() (Config, error) {
@@ -39,6 +41,8 @@ func Load() (Config, error) {
 	cfg.WorkerPollInterval = getEnvOrDefaultDuration("WORKER_POLL_INTERVAL", 2*time.Second)
 	cfg.WorkerBatchSize = getEnvOrDefaultInt("WORKER_BATCH_SIZE", 10)
 	cfg.WorkerTaskTimeout = getEnvOrDefaultDuration("WORKER_TASK_TIMEOUT", 30*time.Second)
+	cfg.WorkerStaleInterval = getEnvOrDefaultDuration("WORKER_STALE_INTERVAL", 30*time.Second)
+	cfg.WorkerStaleDuration = getEnvOrDefaultDuration("WORKER_STALE_DURATION", 5*time.Minute)
 
 	// Required fields
 	cfg.DBHost, missing = getEnvRequired("DB_HOST", missing)

@@ -82,6 +82,14 @@ func TestLoad_DefaultsApplied(t *testing.T) {
 	if cfg.WorkerTaskTimeout != 30*time.Second {
 		t.Errorf("expected WorkerTaskTimeout to be 30 seconds, got %v", cfg.WorkerTaskTimeout)
 	}
+
+	if cfg.WorkerStaleInterval != 30*time.Second {
+		t.Errorf("expected WorkerStaleInterval to be 30 seconds, got %v", cfg.WorkerStaleInterval)
+	}
+
+	if cfg.WorkerStaleDuration != 5*time.Minute {
+		t.Errorf("expected WorkerStaleDuration to be 5 minutes, got %v", cfg.WorkerStaleDuration)
+	}
 }
 
 func TestLoad_DefaultsOverride(t *testing.T) {
