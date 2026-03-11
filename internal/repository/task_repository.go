@@ -224,7 +224,6 @@ func (t *TaskRepository) ClaimTasks(ctx context.Context, workerID string, limit 
 		return nil, apperror.Internal("failed to commit claim transaction", err)
 	}
 
-	t.logger.Info("tasks claimed", "count", len(tasks), "worker_id", workerID)
 	return tasks, nil
 }
 
@@ -243,7 +242,6 @@ func (t *TaskRepository) CompleteTask(ctx context.Context, id uuid.UUID) error {
 		return apperror.NotFound("task not found", nil)
 	}
 
-	t.logger.Info("task marked as completed", "task_id", id)
 	return nil
 }
 
@@ -268,7 +266,6 @@ func (t *TaskRepository) FailTask(ctx context.Context, id uuid.UUID, errMsg stri
 			return apperror.NotFound("task not found", nil)
 		}
 
-		t.logger.Info("task scheduled for retry", "task_id", id, "retry", nextRetryAt)
 	} else {
 		query := `
 			UPDATE tasks
@@ -289,7 +286,6 @@ func (t *TaskRepository) FailTask(ctx context.Context, id uuid.UUID, errMsg stri
 			return apperror.NotFound("task not found", nil)
 		}
 
-		t.logger.Info("task permanently failed", "task_id", id)
 	}
 
 	return nil
@@ -311,10 +307,6 @@ func (t *TaskRepository) UnlockStaleTasks(ctx context.Context, staleDuration tim
 	}
 
 	unlocked := int(results.RowsAffected())
-
-	if unlocked > 0 {
-		t.logger.Warn("unlocked stale tasks", "count", unlocked)
-	}
 
 	return unlocked, nil
 }
