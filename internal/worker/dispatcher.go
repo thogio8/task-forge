@@ -22,6 +22,7 @@ type Dispatcher struct {
 	batchSize    int
 	workerID     string
 	logger       *slog.Logger
+	done         chan struct{}
 }
 
 func NewDispatcher(repo DispatcherRepository, tasks chan<- model.Task, pollInterval time.Duration, batchSize int, logger *slog.Logger) *Dispatcher {
@@ -40,6 +41,7 @@ func NewDispatcher(repo DispatcherRepository, tasks chan<- model.Task, pollInter
 		batchSize:    batchSize,
 		workerID:     workerID,
 		logger:       logger,
+		done:         make(chan struct{}),
 	}
 }
 
@@ -67,8 +69,13 @@ func (d *Dispatcher) Run(ctx context.Context) {
 				d.tasks <- task
 			}
 		case <-ctx.Done():
+			close(d.done)
 			d.logger.Info("dispatcher stopped")
 			return
 		}
 	}
+}
+
+func (d *Dispatcher) Stop() {
+	<-d.done
 }

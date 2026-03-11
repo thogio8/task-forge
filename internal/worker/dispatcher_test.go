@@ -66,17 +66,17 @@ func TestDispatcher_StopsOnNextCancel(t *testing.T) {
 	dispatcher := NewDispatcher(mock, ch, 50*time.Millisecond, 10, testLogger)
 
 	ctx, cancel := context.WithCancel(context.Background())
-
-	done := make(chan struct{})
-	go func() {
-		dispatcher.Run(ctx)
-		close(done)
-	}()
-
+	go dispatcher.Run(ctx)
 	cancel()
 
+	stopped := make(chan struct{})
+	go func() {
+		dispatcher.Stop()
+		close(stopped)
+	}()
+
 	select {
-	case <-done:
+	case <-stopped:
 		// OK
 	case <-time.After(1 * time.Second):
 		t.Fatal("dispatcher did not stop after context cancel")

@@ -115,16 +115,24 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
+
 	logger.Info("shutting down server")
 
-	cancel()
-	pool.Stop()
-
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer shutdownCancel()
+
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		logger.Error("server shutdown error", "error", err)
 	}
+
+	logger.Info("http server stopped")
+
+	cancel()
+	dispatcher.Stop()
+
+	pool.Stop()
+	logger.Info("worker pool stopped")
+
 	db.Close()
 	logger.Info("server stopped")
 }
