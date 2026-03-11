@@ -90,6 +90,10 @@ func TestLoad_DefaultsApplied(t *testing.T) {
 	if cfg.WorkerStaleDuration != 5*time.Minute {
 		t.Errorf("expected WorkerStaleDuration to be 5 minutes, got %v", cfg.WorkerStaleDuration)
 	}
+
+	if cfg.ShutdownTimeout != 30*time.Second {
+		t.Errorf("expected ShutdownTimeout to be 30 seconds, got %v", cfg.ShutdownTimeout)
+	}
 }
 
 func TestLoad_DefaultsOverride(t *testing.T) {

@@ -25,6 +25,7 @@ type Config struct {
 	WorkerTaskTimeout   time.Duration
 	WorkerStaleInterval time.Duration
 	WorkerStaleDuration time.Duration
+	ShutdownTimeout     time.Duration
 }
 
 func Load() (Config, error) {
@@ -43,6 +44,7 @@ func Load() (Config, error) {
 	cfg.WorkerTaskTimeout = getEnvOrDefaultDuration("WORKER_TASK_TIMEOUT", 30*time.Second)
 	cfg.WorkerStaleInterval = getEnvOrDefaultDuration("WORKER_STALE_INTERVAL", 30*time.Second)
 	cfg.WorkerStaleDuration = getEnvOrDefaultDuration("WORKER_STALE_DURATION", 5*time.Minute)
+	cfg.ShutdownTimeout = getEnvOrDefaultDuration("SHUTDOWN_TIMEOUT", 30*time.Second)
 
 	// Required fields
 	cfg.DBHost, missing = getEnvRequired("DB_HOST", missing)
