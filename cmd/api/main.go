@@ -5,6 +5,7 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"os/signal"
 	"syscall"
@@ -95,6 +96,14 @@ func main() {
 	router.Get("/tasks", taskHandler.GetTasks)
 	router.Get("/tasks/{id}", taskHandler.GetTask)
 	router.Patch("/tasks/{id}/status", taskHandler.UpdateTaskStatus)
+	router.Route("/debug/pprof", func(r chi.Router) {
+		r.HandleFunc("/", pprof.Index)
+		r.HandleFunc("/cmdline", pprof.Cmdline)
+		r.HandleFunc("/profile", pprof.Profile)
+		r.HandleFunc("/symbol", pprof.Symbol)
+		r.HandleFunc("/trace", pprof.Trace)
+		r.HandleFunc("/{profile}", pprof.Index)
+	})
 
 	logger.Info("server starting", "port", cfg.HTTPPort)
 	httpServer := &http.Server{
