@@ -54,6 +54,17 @@ func main() {
 	taskRepo := repository.NewTaskRepository(db, logger)
 	taskHandler := handler.NewTaskHandler(taskRepo, logger)
 
+	recovered, err := taskRepo.RecoverStaleTasks(context.Background())
+
+	if err != nil {
+		logger.Error("cannot recover stale tasks", "error", err)
+		os.Exit(1)
+	}
+
+	if recovered > 0 {
+		logger.Info("stale tasks successfully recovered", "count", recovered)
+	}
+
 	executor := worker.NewExecutor(taskRepo, cfg.WorkerTaskTimeout, logger)
 
 	executor.Register("echo", handlers.Echo(logger))

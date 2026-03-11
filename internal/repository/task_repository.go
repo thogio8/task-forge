@@ -278,6 +278,24 @@ func (t *TaskRepository) UnlockStaleTasks(ctx context.Context, staleDuration tim
 	return unlocked, nil
 }
 
+func (t *TaskRepository) RecoverStaleTasks(ctx context.Context) (int, error) {
+	query := `
+		UPDATE tasks SET status = 'pending', locked_by = NULL, locked_at = NULL
+		WHERE status = 'running'
+	`
+
+	results, err := t.pgxPool.Exec(ctx, query)
+
+	if err != nil {
+		t.logger.Error("failed to recover stale tasks", "error", err)
+		return 0, apperror.Internal("failed to recover stale tasks", err)
+	}
+
+	recovered := int(results.RowsAffected())
+
+	return recovered, nil
+}
+
 func scanTask(s scanner) (model.Task, error) {
 	var task model.Task
 	err := s.Scan(

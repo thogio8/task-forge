@@ -341,6 +341,33 @@ func TestUnlockStaleTasks(t *testing.T) {
 	}
 }
 
+func TestRecoverStaleTasks(t *testing.T) {
+	cleanTasks(t)
+
+	repo := NewTaskRepository(testPool, testLogger)
+
+	for range 5 {
+		task := createTestTask(t)
+
+		query := `
+			UPDATE tasks SET status = 'running', locked_by = 'crashed-worker-1', locked_at = NOW()
+			WHERE id = $1
+		`
+
+		testPool.Exec(context.Background(), query, task.ID)
+	}
+
+	recovered, err := repo.RecoverStaleTasks(context.Background())
+
+	if err != nil {
+		t.Fatalf("failed to recover stale tasks: %v", err)
+	}
+
+	if recovered != 5 {
+		t.Fatalf("expected 5 recovered tasks, got %d", recovered)
+	}
+}
+
 func cleanTasks(t *testing.T) {
 	t.Helper()
 	_, err := testPool.Exec(context.Background(), "DELETE FROM tasks")
