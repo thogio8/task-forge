@@ -18,6 +18,10 @@ type TaskRepository struct {
 	logger  *slog.Logger
 }
 
+type scanner interface {
+	Scan(dest ...any) error
+}
+
 func NewTaskRepository(pool *pgxpool.Pool, logger *slog.Logger) *TaskRepository {
 	return &TaskRepository{pgxPool: pool, logger: logger}
 }
@@ -55,20 +59,9 @@ func (t *TaskRepository) GetAll(ctx context.Context) ([]model.Task, error) {
 	var tasks []model.Task
 
 	for rows.Next() {
-		var task model.Task
-		if err := rows.Scan(
-			&task.ID,
-			&task.Status,
-			&task.Payload,
-			&task.CreatedAt,
-			&task.UpdatedAt,
-			&task.LockedBy,
-			&task.LockedAt,
-			&task.AttemptCount,
-			&task.MaxRetries,
-			&task.LastError,
-			&task.NextRetryAt,
-		); err != nil {
+		task, err := scanTask(rows)
+
+		if err != nil {
 			t.logger.Error("failed to scan task row", "error", err)
 			return nil, apperror.Internal("failed to scan task row", err)
 		}
@@ -94,21 +87,7 @@ func (t *TaskRepository) GetById(ctx context.Context, id uuid.UUID) (model.Task,
 
 	row := t.pgxPool.QueryRow(ctx, query, id)
 
-	var task model.Task
-
-	err := row.Scan(
-		&task.ID,
-		&task.Status,
-		&task.Payload,
-		&task.CreatedAt,
-		&task.UpdatedAt,
-		&task.LockedBy,
-		&task.LockedAt,
-		&task.AttemptCount,
-		&task.MaxRetries,
-		&task.LastError,
-		&task.NextRetryAt,
-	)
+	task, err := scanTask(row)
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -176,21 +155,9 @@ func (t *TaskRepository) ClaimTasks(ctx context.Context, workerID string, limit 
 	var ids []uuid.UUID
 
 	for rows.Next() {
-		var task model.Task
+		task, err := scanTask(rows)
 
-		if err := rows.Scan(
-			&task.ID,
-			&task.Status,
-			&task.Payload,
-			&task.CreatedAt,
-			&task.UpdatedAt,
-			&task.LockedBy,
-			&task.LockedAt,
-			&task.AttemptCount,
-			&task.MaxRetries,
-			&task.LastError,
-			&task.NextRetryAt,
-		); err != nil {
+		if err != nil {
 			t.logger.Error("failed to scan claimable task", "error", err)
 			return nil, apperror.Internal("failed to scan claimable task", err)
 		}
@@ -309,4 +276,16 @@ func (t *TaskRepository) UnlockStaleTasks(ctx context.Context, staleDuration tim
 	unlocked := int(results.RowsAffected())
 
 	return unlocked, nil
+}
+
+func scanTask(s scanner) (model.Task, error) {
+	var task model.Task
+	err := s.Scan(
+		&task.ID, &task.Status, &task.Payload,
+		&task.CreatedAt, &task.UpdatedAt,
+		&task.LockedBy, &task.LockedAt,
+		&task.AttemptCount, &task.MaxRetries,
+		&task.LastError, &task.NextRetryAt,
+	)
+	return task, err
 }
