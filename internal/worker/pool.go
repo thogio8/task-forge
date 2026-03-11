@@ -28,7 +28,7 @@ func (p *Pool) Start() {
 	p.wg.Add(p.workerCount)
 
 	for i := range p.workerCount {
-		go func(index int) {
+		go func(_ int) {
 			defer p.wg.Done()
 			for task := range p.tasks {
 				p.active.Add(1)
