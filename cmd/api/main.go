@@ -72,25 +72,7 @@ func main() {
 
 	go dispatcher.Run(ctx)
 
-	go func() {
-		ticker := time.NewTicker(cfg.WorkerStaleInterval)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticker.C:
-				count, err := taskRepo.UnlockStaleTasks(ctx, cfg.WorkerStaleDuration)
-				if err != nil {
-					logger.Error("failed to unlock stale tasks", "error", err)
-				}
-				if count > 0 {
-					logger.Info("unlocked stale tasks", "count", count)
-				}
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
+	worker.StartStaleCleaner(ctx, taskRepo, cfg.WorkerStaleInterval, cfg.WorkerStaleDuration, logger)
 
 	router := chi.NewRouter()
 	router.Use(middleware.Logger)
