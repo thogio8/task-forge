@@ -220,7 +220,7 @@ func (t *TaskRepository) ClaimTasks(ctx context.Context, workerID string, limit 
 	err = tx.Commit(ctx)
 
 	if err != nil {
-		t.logger.Error("failed to commit claim transaction")
+		t.logger.Error("failed to commit claim transaction", "error", err)
 		return nil, apperror.Internal("failed to commit claim transaction", err)
 	}
 
