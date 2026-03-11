@@ -1,5 +1,5 @@
 .PHONY: up down build test test-unit test-integration test-all logs logs-app logs-db restart db-shell app-shell \
-       migrate-up migrate-down migrate-create migrate-status migrate-force
+       migrate-up migrate-down migrate-create migrate-status migrate-force bench test-race pprof-goroutine
 
 include .env
 export
@@ -62,3 +62,12 @@ migrate-force:
 migrate-create:
 	docker run --rm -v $(PWD)/migrations:/migrations migrate/migrate \
 		create -ext sql -dir /migrations -seq $(name)
+
+bench:
+	go test ./internal/worker/ -bench=. -benchmem -count=1
+
+test-race:
+	go test -race ./... -count=1
+
+pprof-goroutine:
+	go tool pprof http://localhost:$(HTTP_PORT)/debug/pprof/goroutine
