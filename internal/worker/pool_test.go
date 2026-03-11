@@ -1,8 +1,8 @@
 package worker
 
 import (
+	"io"
 	"log/slog"
-	"os"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -10,7 +10,7 @@ import (
 	"github.com/thogio8/task-forge/internal/model"
 )
 
-var testLogger = slog.New(slog.NewTextHandler(os.Stdout, nil))
+var testLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 func TestPool_AllTasksProcessed(t *testing.T) {
 	var counter atomic.Int64
