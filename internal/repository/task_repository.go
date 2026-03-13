@@ -26,25 +26,63 @@ func NewTaskRepository(pool *pgxpool.Pool, logger *slog.Logger) *TaskRepository 
 	return &TaskRepository{pgxPool: pool, logger: logger}
 }
 
-func (t *TaskRepository) Create(ctx context.Context, task *model.Task) error {
-	query := `INSERT INTO tasks (status, payload) VALUES ($1, $2) RETURNING id, created_at, updated_at`
+func (t *TaskRepository) Create(ctx context.Context, task *model.Task) (bool, error) {
+	if task.IdempotencyKey == nil {
+		query := `INSERT INTO tasks (status, payload) VALUES ($1, $2) RETURNING id, created_at, updated_at`
 
-	row := t.pgxPool.QueryRow(ctx, query, task.Status, task.Payload)
+		row := t.pgxPool.QueryRow(ctx, query, task.Status, task.Payload)
+
+		err := row.Scan(&task.ID, &task.CreatedAt, &task.UpdatedAt)
+		if err != nil {
+			t.logger.Error("failed to create task", "error", err)
+			return false, apperror.Internal("failed to create task", err)
+		}
+
+		t.logger.Info("task created", "task_id", task.ID)
+		return true, nil
+	}
+
+	query := `
+		INSERT INTO tasks (status, payload, idempotency_key)
+		VALUES ($1, $2, $3) 
+		ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
+		RETURNING id, created_at, updated_at
+	`
+
+	row := t.pgxPool.QueryRow(ctx, query, task.Status, task.Payload, task.IdempotencyKey)
 
 	err := row.Scan(&task.ID, &task.CreatedAt, &task.UpdatedAt)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			query = `
+				SELECT id, status, payload, created_at, updated_at, locked_by, locked_at,
+				attempt_count, max_retries, last_error, next_retry_at, idempotency_key
+				FROM tasks
+				WHERE idempotency_key = $1
+			`
+
+			row = t.pgxPool.QueryRow(ctx, query, task.IdempotencyKey)
+			existingTask, err := scanTask(row)
+			if err != nil {
+				return false, apperror.Internal("failed to fetch existing task", err)
+			}
+
+			*task = existingTask
+
+			return false, nil
+		}
+
 		t.logger.Error("failed to create task", "error", err)
-		return apperror.Internal("failed to create task", err)
+		return false, apperror.Internal("failed to create task", err)
 	}
 
-	t.logger.Info("task created", "task_id", task.ID)
-	return nil
+	return true, nil
 }
 
 func (t *TaskRepository) GetAll(ctx context.Context) ([]model.Task, error) {
 	query := `
 		SELECT id, status, payload, created_at, updated_at, locked_by, locked_at,
-    	attempt_count, max_retries, last_error, next_retry_at
+    	attempt_count, max_retries, last_error, next_retry_at, idempotency_key
 		FROM tasks
 	`
 
@@ -80,7 +118,7 @@ func (t *TaskRepository) GetAll(ctx context.Context) ([]model.Task, error) {
 func (t *TaskRepository) GetById(ctx context.Context, id uuid.UUID) (model.Task, error) {
 	query := `
 		SELECT id, status, payload, created_at, updated_at, locked_by, locked_at,
-    	attempt_count, max_retries, last_error, next_retry_at
+    	attempt_count, max_retries, last_error, next_retry_at, idempotency_key
 		FROM tasks
 		WHERE id = $1
 		`
@@ -133,7 +171,7 @@ func (t *TaskRepository) ClaimTasks(ctx context.Context, workerID string, limit 
 
 	selectQuery := `
 		SELECT id, status, payload, created_at, updated_at, locked_by, locked_at,
-    	attempt_count, max_retries, last_error, next_retry_at
+    	attempt_count, max_retries, last_error, next_retry_at, idempotency_key
   		FROM tasks
   		WHERE status = 'pending'
     	AND locked_by IS NULL
@@ -304,6 +342,7 @@ func scanTask(s scanner) (model.Task, error) {
 		&task.LockedBy, &task.LockedAt,
 		&task.AttemptCount, &task.MaxRetries,
 		&task.LastError, &task.NextRetryAt,
+		&task.IdempotencyKey,
 	)
 	return task, err
 }

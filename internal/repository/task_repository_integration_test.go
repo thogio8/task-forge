@@ -55,7 +55,7 @@ func TestCreateTask(t *testing.T) {
 		Payload: []byte(`{"type":"email"}`),
 	}
 
-	err := repo.Create(context.Background(), &task)
+	created, err := repo.Create(context.Background(), &task)
 	if err != nil {
 		t.Fatalf("failed to create task: %v", err)
 	}
@@ -66,6 +66,57 @@ func TestCreateTask(t *testing.T) {
 
 	if task.CreatedAt.IsZero() {
 		t.Error("expected CreatedAt to be set by DB")
+	}
+
+	if !created {
+		t.Error("expected new task created")
+	}
+}
+
+func TestCreateTask_WithIdempotencyKey(t *testing.T) {
+	cleanTasks(t)
+	repo := NewTaskRepository(testPool, testLogger)
+
+	key := "test-key-123"
+
+	task1 := model.Task{
+		Status:         model.StatusPending,
+		Payload:        []byte(`{"type":"echo"}`),
+		IdempotencyKey: &key,
+	}
+
+	created1, err := repo.Create(context.Background(), &task1)
+
+	if err != nil {
+		t.Fatalf("failed to create task: %v", err)
+	}
+
+	if !created1 {
+		t.Error("expected new task created")
+	}
+
+	if task1.ID == uuid.Nil {
+		t.Error("expected id to be set")
+	}
+
+	task2 := model.Task{
+		Status:         model.StatusPending,
+		Payload:        []byte(`{"type":"echo"}`),
+		IdempotencyKey: &key,
+	}
+
+	created2, err := repo.Create(context.Background(), &task2)
+
+	if err != nil {
+		t.Fatalf("failed to create task: %v", err)
+	}
+
+	if created2 {
+		t.Error("expected no new task created")
+	}
+
+	if task2.ID != task1.ID {
+		t.Error("exepected tasks to have the same ID")
 	}
 }
 
@@ -383,7 +434,10 @@ func createTestTask(t *testing.T) model.Task {
 		Status:  model.StatusPending,
 		Payload: []byte(`{"type":"test"}`),
 	}
-	if err := repo.Create(context.Background(), &task); err != nil {
+
+	_, err := repo.Create(context.Background(), &task)
+
+	if err != nil {
 		t.Fatalf("failed to create test task: %v", err)
 	}
 	return task

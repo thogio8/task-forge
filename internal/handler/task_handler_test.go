@@ -17,13 +17,13 @@ import (
 )
 
 type mockTaskStore struct {
-	CreateFunc       func(ctx context.Context, task *model.Task) error
+	CreateFunc       func(ctx context.Context, task *model.Task) (bool, error)
 	GetAllFunc       func(ctx context.Context) ([]model.Task, error)
 	GetByIdFunc      func(ctx context.Context, id uuid.UUID) (model.Task, error)
 	UpdateStatusFunc func(ctx context.Context, id uuid.UUID, status string) error
 }
 
-func (m *mockTaskStore) Create(ctx context.Context, task *model.Task) error {
+func (m *mockTaskStore) Create(ctx context.Context, task *model.Task) (bool, error) {
 	return m.CreateFunc(ctx, task)
 }
 
@@ -41,8 +41,8 @@ func (m *mockTaskStore) UpdateStatus(ctx context.Context, id uuid.UUID, status s
 
 func TestCreateTask_Success(t *testing.T) {
 	mock := &mockTaskStore{
-		CreateFunc: func(ctx context.Context, task *model.Task) error {
-			return nil
+		CreateFunc: func(ctx context.Context, task *model.Task) (bool, error) {
+			return true, nil
 		},
 	}
 
@@ -60,8 +60,8 @@ func TestCreateTask_Success(t *testing.T) {
 
 func TestCreateTask_BadJSON(t *testing.T) {
 	mock := &mockTaskStore{
-		CreateFunc: func(ctx context.Context, task *model.Task) error {
-			return nil
+		CreateFunc: func(ctx context.Context, task *model.Task) (bool, error) {
+			return true, nil
 		},
 	}
 
@@ -79,8 +79,8 @@ func TestCreateTask_BadJSON(t *testing.T) {
 
 func TestCreateTask_EmptyPayload(t *testing.T) {
 	mock := &mockTaskStore{
-		CreateFunc: func(ctx context.Context, task *model.Task) error {
-			return nil
+		CreateFunc: func(ctx context.Context, task *model.Task) (bool, error) {
+			return true, nil
 		},
 	}
 
@@ -98,8 +98,8 @@ func TestCreateTask_EmptyPayload(t *testing.T) {
 
 func TestCreateTask_RepoError(t *testing.T) {
 	mock := &mockTaskStore{
-		CreateFunc: func(ctx context.Context, task *model.Task) error {
-			return apperror.Internal("internal server error", nil)
+		CreateFunc: func(ctx context.Context, task *model.Task) (bool, error) {
+			return false, apperror.Internal("internal server error", nil)
 		},
 	}
 
@@ -112,6 +112,44 @@ func TestCreateTask_RepoError(t *testing.T) {
 
 	if recorder.Code != http.StatusInternalServerError {
 		t.Errorf("got %v, want %v", recorder.Code, http.StatusInternalServerError)
+	}
+}
+
+func TestCreateTask_WithIdempotencyKey_Created(t *testing.T) {
+	mock := &mockTaskStore{
+		CreateFunc: func(ctx context.Context, task *model.Task) (bool, error) {
+			return true, nil
+		},
+	}
+
+	taskHandler := NewTaskHandler(mock, slog.Default())
+
+	request := httptest.NewRequest("POST", "/tasks", strings.NewReader(`{"payload":{"type": "email"}, "idempotency_key": "some-key"}`))
+	recorder := httptest.NewRecorder()
+
+	taskHandler.CreateTask(recorder, request)
+
+	if recorder.Code != http.StatusCreated {
+		t.Errorf("got %v, expected %v", recorder.Code, http.StatusCreated)
+	}
+}
+
+func TestCreateTask_WithIdempotencyKey_AlreadyExists(t *testing.T) {
+	mock := &mockTaskStore{
+		CreateFunc: func(ctx context.Context, task *model.Task) (bool, error) {
+			return false, nil
+		},
+	}
+
+	taskHandler := NewTaskHandler(mock, slog.Default())
+
+	request := httptest.NewRequest("POST", "/tasks", strings.NewReader(`{"payload":{"type": "email"}, "idempotency_key": "some-key"}`))
+	recorder := httptest.NewRecorder()
+
+	taskHandler.CreateTask(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Errorf("got %v, expected %v", recorder.Code, http.StatusOK)
 	}
 }
 

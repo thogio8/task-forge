@@ -14,7 +14,7 @@ import (
 )
 
 type TaskStore interface {
-	Create(ctx context.Context, task *model.Task) error
+	Create(ctx context.Context, task *model.Task) (bool, error)
 	GetAll(ctx context.Context) ([]model.Task, error)
 	GetById(ctx context.Context, id uuid.UUID) (model.Task, error)
 	UpdateStatus(ctx context.Context, id uuid.UUID, status string) error
@@ -30,7 +30,8 @@ func NewTaskHandler(taskStore TaskStore, logger *slog.Logger) *TaskHandler {
 }
 
 type CreateTaskRequest struct {
-	Payload json.RawMessage `json:"payload"`
+	Payload        json.RawMessage `json:"payload"`
+	IdempotencyKey *string         `json:"idempotency_key"`
 }
 
 type UpdateStatusRequest struct {
@@ -38,20 +39,22 @@ type UpdateStatusRequest struct {
 }
 
 type TaskResponse struct {
-	ID        uuid.UUID       `json:"id"`
-	Status    string          `json:"status"`
-	Payload   json.RawMessage `json:"payload"`
-	CreatedAt string          `json:"created_at"`
-	UpdatedAt string          `json:"updated_at"`
+	ID             uuid.UUID       `json:"id"`
+	Status         string          `json:"status"`
+	Payload        json.RawMessage `json:"payload"`
+	CreatedAt      string          `json:"created_at"`
+	UpdatedAt      string          `json:"updated_at"`
+	IdempotencyKey *string         `json:"idempotency_key,omitempty"`
 }
 
 func toTaskResponse(task model.Task) TaskResponse {
 	return TaskResponse{
-		ID:        task.ID,
-		Status:    task.Status,
-		Payload:   task.Payload,
-		CreatedAt: task.CreatedAt.Format("2006-01-02T15:04:05Z"),
-		UpdatedAt: task.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+		ID:             task.ID,
+		Status:         task.Status,
+		Payload:        task.Payload,
+		CreatedAt:      task.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		UpdatedAt:      task.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+		IdempotencyKey: task.IdempotencyKey,
 	}
 }
 
@@ -84,16 +87,23 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	task := model.Task{
-		Status:  model.StatusPending,
-		Payload: req.Payload,
+		Status:         model.StatusPending,
+		Payload:        req.Payload,
+		IdempotencyKey: req.IdempotencyKey,
 	}
 
-	if err := h.taskStore.Create(r.Context(), &task); err != nil {
+	created, err := h.taskStore.Create(r.Context(), &task)
+
+	if err != nil {
 		h.handleError(w, err)
 		return
 	}
 
-	JSON(w, http.StatusCreated, toTaskResponse(task))
+	if created {
+		JSON(w, http.StatusCreated, toTaskResponse(task))
+	} else {
+		JSON(w, http.StatusOK, toTaskResponse(task))
+	}
 }
 
 func (h *TaskHandler) GetTasks(w http.ResponseWriter, r *http.Request) {
