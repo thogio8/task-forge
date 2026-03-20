@@ -54,6 +54,8 @@ func main() {
 	taskRepo := repository.NewTaskRepository(db, logger)
 	taskHandler := handler.NewTaskHandler(taskRepo, logger)
 
+	deadLetterTaskRepo := repository.NewDeadLetterRepository(db, logger)
+
 	recovered, err := taskRepo.RecoverStaleTasks(context.Background())
 
 	if err != nil {
@@ -65,7 +67,7 @@ func main() {
 		logger.Info("stale tasks successfully recovered", "count", recovered)
 	}
 
-	executor := worker.NewExecutor(taskRepo, cfg.WorkerTaskTimeout, logger)
+	executor := worker.NewExecutor(taskRepo, cfg.WorkerTaskTimeout, logger, deadLetterTaskRepo)
 
 	executor.Register("echo", handlers.Echo(logger))
 

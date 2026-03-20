@@ -30,10 +30,20 @@ func (m *mockRepo) FailTask(_ context.Context, id uuid.UUID, errMsg string, next
 	return nil
 }
 
+type mockDLQRepo struct {
+	movedIDs []uuid.UUID
+}
+
+func (m *mockDLQRepo) MoveToDLQ(_ context.Context, taskID uuid.UUID) error {
+	m.movedIDs = append(m.movedIDs, taskID)
+	return nil
+}
+
 func TestExecute_Success(t *testing.T) {
 	mock := &mockRepo{}
+	mockDLQ := &mockDLQRepo{}
 
-	executor := NewExecutor(mock, 5*time.Second, testLogger)
+	executor := NewExecutor(mock, 5*time.Second, testLogger, mockDLQ)
 
 	executor.Register("echo", func(_ context.Context, _ json.RawMessage) error {
 		return nil
@@ -62,8 +72,9 @@ func TestExecute_Success(t *testing.T) {
 
 func TestExecute_UnknownType(t *testing.T) {
 	mock := &mockRepo{}
+	mockDLQ := &mockDLQRepo{}
 
-	executor := NewExecutor(mock, 5*time.Second, testLogger)
+	executor := NewExecutor(mock, 5*time.Second, testLogger, mockDLQ)
 
 	task := model.Task{
 		ID:         uuid.New(),
@@ -92,8 +103,9 @@ func TestExecute_UnknownType(t *testing.T) {
 
 func TestExecute_HandleError(t *testing.T) {
 	mock := &mockRepo{}
+	mockDLQ := &mockDLQRepo{}
 
-	executor := NewExecutor(mock, 5*time.Second, testLogger)
+	executor := NewExecutor(mock, 5*time.Second, testLogger, mockDLQ)
 
 	executor.Register("echo", func(_ context.Context, _ json.RawMessage) error {
 		return fmt.Errorf("something broke")
@@ -131,8 +143,9 @@ func TestExecute_HandleError(t *testing.T) {
 
 func TestExecute_Timeout(t *testing.T) {
 	mock := &mockRepo{}
+	mockDLQ := &mockDLQRepo{}
 
-	executor := NewExecutor(mock, 100*time.Millisecond, testLogger)
+	executor := NewExecutor(mock, 100*time.Millisecond, testLogger, mockDLQ)
 
 	executor.Register("slow", func(ctx context.Context, _ json.RawMessage) error {
 		select {
@@ -167,8 +180,9 @@ func TestExecute_Timeout(t *testing.T) {
 
 func TestExecute_InvalidPayload(t *testing.T) {
 	mock := &mockRepo{}
+	mockDLQ := &mockDLQRepo{}
 
-	executor := NewExecutor(mock, 5*time.Second, testLogger)
+	executor := NewExecutor(mock, 5*time.Second, testLogger, mockDLQ)
 
 	task := model.Task{
 		ID:         uuid.New(),
@@ -213,5 +227,33 @@ func TestCalculateBackoff(t *testing.T) {
 	maxWithJitter := 5*time.Minute + 5*time.Minute/10
 	if backoff > maxWithJitter {
 		t.Fatalf("expected backoff capped, got %v", backoff)
+	}
+}
+
+func TestExecute_PermanentFailure_MovesToDLQ(t *testing.T) {
+	mock := &mockRepo{}
+	mockDLQ := &mockDLQRepo{}
+
+	executor := NewExecutor(mock, 5*time.Second, testLogger, mockDLQ)
+
+	executor.Register("permanent", func(_ context.Context, _ json.RawMessage) error {
+		return fmt.Errorf("fatal error")
+	})
+
+	task := model.Task{
+		ID:           uuid.New(),
+		Payload:      json.RawMessage(`{"type": "permanent"}`),
+		MaxRetries:   3,
+		AttemptCount: 2,
+	}
+
+	executor.Execute(context.Background(), task)
+
+	if len(mockDLQ.movedIDs) != 1 {
+		t.Fatalf("expected 1 moved, got %d", len(mockDLQ.movedIDs))
+	}
+
+	if len(mock.failedIDs) != 0 {
+		t.Fatalf("expected 0 failed, got %d", len(mock.failedIDs))
 	}
 }

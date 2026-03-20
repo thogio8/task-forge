@@ -18,15 +18,20 @@ type TaskRepository interface {
 	FailTask(ctx context.Context, id uuid.UUID, errMsg string, nextRetryAt *time.Time) error
 }
 
+type DLQRepository interface {
+	MoveToDLQ(ctx context.Context, taskID uuid.UUID) error
+}
+
 type Executor struct {
 	handlers    map[string]TaskFunc
 	repo        TaskRepository
 	taskTimeout time.Duration
 	logger      *slog.Logger
+	dlqRepo     DLQRepository
 }
 
-func NewExecutor(repo TaskRepository, taskTimeout time.Duration, logger *slog.Logger) *Executor {
-	return &Executor{handlers: make(map[string]TaskFunc), repo: repo, taskTimeout: taskTimeout, logger: logger}
+func NewExecutor(repo TaskRepository, taskTimeout time.Duration, logger *slog.Logger, dlqRepo DLQRepository) *Executor {
+	return &Executor{handlers: make(map[string]TaskFunc), repo: repo, taskTimeout: taskTimeout, logger: logger, dlqRepo: dlqRepo}
 }
 
 func (e *Executor) Register(taskType string, fn TaskFunc) {
@@ -84,12 +89,12 @@ func (e *Executor) Execute(ctx context.Context, task model.Task) {
 				e.logger.Warn("task failed, scheduling retry", "task_id", task.ID, "attempt", task.AttemptCount+1, "next_retry", nextRetryAt)
 			}
 		} else {
-			failErr := e.repo.FailTask(ctx, task.ID, err.Error(), nil)
+			moveErr := e.dlqRepo.MoveToDLQ(ctx, task.ID)
 
-			if failErr != nil {
-				e.logger.Error("failed to mark task as failed", "task_id", task.ID, "error", failErr)
+			if moveErr != nil {
+				e.logger.Error("failed to move task to DLQ", "task_id", task.ID, "error", moveErr)
 			} else {
-				e.logger.Error("task permanently failed", "task_id", task.ID, "attempt", task.AttemptCount+1)
+				e.logger.Error("task permanently failed, moved to DLQ", "task_id", task.ID, "attempt", task.AttemptCount+1)
 			}
 		}
 
