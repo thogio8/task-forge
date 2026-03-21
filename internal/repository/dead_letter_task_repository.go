@@ -121,7 +121,33 @@ func (d *DeadLetterTaskRepository) GetAll(ctx context.Context) ([]model.DeadLett
 	return deadLetterTasks, nil
 }
 
-func (d *DeadLetterTaskRepository) Retry(ctx context.Context, dlqID uuid.UUID) (model.Task, error) {
+func (d *DeadLetterTaskRepository) GetById(ctx context.Context, id uuid.UUID) (model.DeadLetterTask, error) {
+	query := `
+		SELECT id, original_task_id, payload, last_error, attempt_count, failed_at, retried_at,
+		created_at
+		FROM dead_letter_tasks
+		WHERE id = $1
+		`
+
+	row := d.pgxPool.QueryRow(ctx, query, id)
+
+	deadLetterTask, err := scanDeadLetterTask(row)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			d.logger.Warn("dead letter task not found", "dead_letter_task_id", deadLetterTask.ID)
+			return model.DeadLetterTask{}, apperror.NotFound("dead letter task not found", err)
+		}
+
+		d.logger.Error("failed to scan dead letter task", "error", err)
+		return model.DeadLetterTask{}, apperror.Internal("failed to scan dead letter task", err)
+	}
+
+	d.logger.Info("dead letter task fetched", "dead_letter_task_id", deadLetterTask.ID)
+	return deadLetterTask, nil
+}
+
+func (d *DeadLetterTaskRepository) Retry(ctx context.Context, id uuid.UUID) (model.Task, error) {
 	tx, err := d.pgxPool.Begin(ctx)
 
 	if err != nil {
@@ -138,7 +164,7 @@ func (d *DeadLetterTaskRepository) Retry(ctx context.Context, dlqID uuid.UUID) (
 		WHERE id = $1
 	`
 
-	row := tx.QueryRow(ctx, selectQuery, dlqID)
+	row := tx.QueryRow(ctx, selectQuery, id)
 
 	deadLetterTask, err := scanDeadLetterTask(row)
 

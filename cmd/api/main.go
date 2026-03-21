@@ -55,6 +55,7 @@ func main() {
 	taskHandler := handler.NewTaskHandler(taskRepo, logger)
 
 	deadLetterTaskRepo := repository.NewDeadLetterRepository(db, logger)
+	deadLetterTaskHandler := handler.NewDeadLetterTaskHandler(deadLetterTaskRepo, logger)
 
 	recovered, err := taskRepo.RecoverStaleTasks(context.Background())
 
@@ -103,6 +104,9 @@ func main() {
 		r.HandleFunc("/trace", pprof.Trace)
 		r.HandleFunc("/{profile}", pprof.Index)
 	})
+	router.Get("/dlq", deadLetterTaskHandler.GetDeadLetterTasks)
+	router.Get("/dlq/{id}", deadLetterTaskHandler.GetDeadLetterTask)
+	router.Post("/dlq/{id}/retry", deadLetterTaskHandler.Retry)
 
 	logger.Info("server starting", "port", cfg.HTTPPort)
 	httpServer := &http.Server{
