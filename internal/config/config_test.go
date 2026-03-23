@@ -94,6 +94,10 @@ func TestLoad_DefaultsApplied(t *testing.T) {
 	if cfg.ShutdownTimeout != 30*time.Second {
 		t.Errorf("expected ShutdownTimeout to be 30 seconds, got %v", cfg.ShutdownTimeout)
 	}
+
+	if cfg.HeartbeatInterval != 5*time.Second {
+		t.Errorf("expected HeartbeatInterval to be 5 seconds, got %v", cfg.HeartbeatInterval)
+	}
 }
 
 func TestLoad_DefaultsOverride(t *testing.T) {

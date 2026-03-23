@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"log/slog"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 
@@ -57,6 +59,8 @@ func main() {
 	deadLetterTaskRepo := repository.NewDeadLetterRepository(db, logger)
 	deadLetterTaskHandler := handler.NewDeadLetterTaskHandler(deadLetterTaskRepo, logger)
 
+	instanceRepo := repository.NewInstanceRepository(db, logger)
+
 	recovered, err := taskRepo.RecoverStaleTasks(context.Background())
 
 	if err != nil {
@@ -80,12 +84,26 @@ func main() {
 
 	pool.Start()
 
-	dispatcher := worker.NewDispatcher(taskRepo, pool.Tasks(), cfg.WorkerPollInterval, cfg.WorkerBatchSize, logger)
+	hostName, err := os.Hostname()
+	if err != nil {
+		logger.Warn("failed to get kernel hostname", "error", err)
+		hostName = "unknown"
+	}
+
+	workerID := fmt.Sprintf("%s-%d-%s", hostName, os.Getpid(), uuid.New().String()[:8])
+
+	err = instanceRepo.Register(context.Background(), workerID)
+	if err != nil {
+		logger.Error("failed to register instance", "error", err)
+	}
+	
+	dispatcher := worker.NewDispatcher(taskRepo, pool.Tasks(), cfg.WorkerPollInterval, cfg.WorkerBatchSize, workerID, logger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go dispatcher.Run(ctx)
 
+	worker.StartHeartbeat(ctx, instanceRepo, workerID, cfg.HeartbeatInterval, logger)
 	worker.StartStaleCleaner(ctx, taskRepo, cfg.WorkerStaleInterval, cfg.WorkerStaleDuration, logger)
 
 	router := chi.NewRouter()
@@ -144,6 +162,11 @@ func main() {
 
 	pool.Stop()
 	logger.Info("worker pool stopped")
+
+	if err := instanceRepo.Deregister(context.Background(), workerID); err != nil {
+		logger.Error("failed to deregister instance", "error", err)
+	}
+	logger.Info("instance deregistered", "instance_id", workerID)
 
 	db.Close()
 	logger.Info("server stopped")

@@ -2,12 +2,9 @@ package worker
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
-	"os"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/thogio8/task-forge/internal/model"
 )
 
@@ -25,15 +22,7 @@ type Dispatcher struct {
 	done         chan struct{}
 }
 
-func NewDispatcher(repo DispatcherRepository, tasks chan<- model.Task, pollInterval time.Duration, batchSize int, logger *slog.Logger) *Dispatcher {
-	hostName, err := os.Hostname()
-	if err != nil {
-		logger.Warn("failed to get kernel hostname", "error", err)
-		hostName = "unknown"
-	}
-
-	workerID := fmt.Sprintf("%s-%d-%s", hostName, os.Getpid(), uuid.New().String()[:8])
-
+func NewDispatcher(repo DispatcherRepository, tasks chan<- model.Task, pollInterval time.Duration, batchSize int, workerID string, logger *slog.Logger) *Dispatcher {
 	return &Dispatcher{
 		repo:         repo,
 		tasks:        tasks,

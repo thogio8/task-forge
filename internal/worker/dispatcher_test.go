@@ -33,7 +33,7 @@ func TestDispatcher_ClaimsAndDispatches(t *testing.T) {
 
 	ch := make(chan model.Task, 10)
 
-	dispatcher := NewDispatcher(mock, ch, 50*time.Millisecond, 10, testLogger)
+	dispatcher := NewDispatcher(mock, ch, 50*time.Millisecond, 10, "test-worker", testLogger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -63,7 +63,7 @@ func TestDispatcher_StopsOnNextCancel(t *testing.T) {
 
 	ch := make(chan model.Task, 10)
 
-	dispatcher := NewDispatcher(mock, ch, 50*time.Millisecond, 10, testLogger)
+	dispatcher := NewDispatcher(mock, ch, 50*time.Millisecond, 10, "test-worker", testLogger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go dispatcher.Run(ctx)
@@ -91,7 +91,7 @@ func TestDispatcher_ContinuesOnError(t *testing.T) {
 
 	ch := make(chan model.Task, 10)
 
-	dispatcher := NewDispatcher(mock, ch, 50*time.Millisecond, 10, testLogger)
+	dispatcher := NewDispatcher(mock, ch, 50*time.Millisecond, 10, "test-worker", testLogger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
