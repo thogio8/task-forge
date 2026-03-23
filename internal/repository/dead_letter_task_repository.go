@@ -43,7 +43,7 @@ func (d *DeadLetterTaskRepository) MoveToDLQ(ctx context.Context, taskID uuid.UU
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			d.logger.Warn("task not found", "task_id", task.ID)
+			d.logger.Warn("task not found", "task_id", taskID)
 			return apperror.NotFound("task not found", err)
 		}
 
@@ -170,7 +170,7 @@ func (d *DeadLetterTaskRepository) Retry(ctx context.Context, id uuid.UUID) (mod
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			d.logger.Warn("dead letter task not found", "dead_letter_task_id", deadLetterTask.ID)
+			d.logger.Warn("dead letter task not found", "dead_letter_task_id", id)
 			return model.Task{}, apperror.NotFound("dead letter task not found", err)
 		}
 
