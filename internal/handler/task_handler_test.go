@@ -115,6 +115,21 @@ func TestCreateTask_RepoError(t *testing.T) {
 	}
 }
 
+func TestCreateTask_EmptyIdempotencyKey(t *testing.T) {
+	mock := &mockTaskStore{}
+
+	taskHandler := NewTaskHandler(mock, slog.Default())
+
+	request := httptest.NewRequest("POST", "/tasks", strings.NewReader(`{"payload":{"type": "email"}, "idempotency_key": ""}`))
+	recorder := httptest.NewRecorder()
+
+	taskHandler.CreateTask(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Errorf("got %v, want %v", recorder.Code, http.StatusBadRequest)
+	}
+}
+
 func TestCreateTask_WithIdempotencyKey_Created(t *testing.T) {
 	mock := &mockTaskStore{
 		CreateFunc: func(ctx context.Context, task *model.Task) (bool, error) {

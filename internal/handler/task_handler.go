@@ -86,6 +86,11 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.IdempotencyKey != nil && *req.IdempotencyKey == "" {
+		Error(w, http.StatusBadRequest, "idempotency key cannot be empty")
+		return
+	}
+
 	task := model.Task{
 		Status:         model.StatusPending,
 		Payload:        req.Payload,
