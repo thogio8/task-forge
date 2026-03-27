@@ -10,23 +10,25 @@ import (
 )
 
 type Config struct {
-	HTTPPort            string
-	DBHost              string
-	DBPort              string
-	DBUser              string
-	DBPassword          string
-	DBName              string
-	DBSSLMode           string
-	LogLevel            string
-	LogFormat           string
-	WorkerPoolSize      int
-	WorkerPollInterval  time.Duration
-	WorkerBatchSize     int
-	WorkerTaskTimeout   time.Duration
-	WorkerStaleInterval time.Duration
-	WorkerStaleDuration time.Duration
-	ShutdownTimeout     time.Duration
-	HeartbeatInterval   time.Duration
+	HTTPPort                string
+	DBHost                  string
+	DBPort                  string
+	DBUser                  string
+	DBPassword              string
+	DBName                  string
+	DBSSLMode               string
+	LogLevel                string
+	LogFormat               string
+	WorkerPoolSize          int
+	WorkerPollInterval      time.Duration
+	WorkerBatchSize         int
+	WorkerTaskTimeout       time.Duration
+	WorkerStaleInterval     time.Duration
+	WorkerStaleDuration     time.Duration
+	ShutdownTimeout         time.Duration
+	InstanceMonitorInterval time.Duration
+	HeartbeatTimeout        time.Duration
+	HeartbeatInterval       time.Duration
 }
 
 func Load() (Config, error) {
@@ -46,6 +48,8 @@ func Load() (Config, error) {
 	cfg.WorkerStaleInterval = getEnvOrDefaultDuration("WORKER_STALE_INTERVAL", 30*time.Second)
 	cfg.WorkerStaleDuration = getEnvOrDefaultDuration("WORKER_STALE_DURATION", 5*time.Minute)
 	cfg.ShutdownTimeout = getEnvOrDefaultDuration("SHUTDOWN_TIMEOUT", 30*time.Second)
+	cfg.InstanceMonitorInterval = getEnvOrDefaultDuration("INSTANCE_MONITOR_INTERVAL", 30*time.Second)
+	cfg.HeartbeatTimeout = getEnvOrDefaultDuration("HEARTBEAT_TIMEOUT", 30*time.Second)
 	cfg.HeartbeatInterval = getEnvOrDefaultDuration("HEARTBEAT_INTERVAL", 5*time.Second)
 
 	// Required fields

@@ -95,6 +95,14 @@ func TestLoad_DefaultsApplied(t *testing.T) {
 		t.Errorf("expected ShutdownTimeout to be 30 seconds, got %v", cfg.ShutdownTimeout)
 	}
 
+	if cfg.InstanceMonitorInterval != 30*time.Second {
+		t.Errorf("expected InstanceMonitorInterval to be 30 seconds, got %v", cfg.InstanceMonitorInterval)
+	}
+
+	if cfg.HeartbeatTimeout != 15*time.Second {
+		t.Errorf("expected HeartbeatTimeout to be 15 seconds, got %v", cfg.HeartbeatTimeout)
+	}
+
 	if cfg.HeartbeatInterval != 5*time.Second {
 		t.Errorf("expected HeartbeatInterval to be 5 seconds, got %v", cfg.HeartbeatInterval)
 	}

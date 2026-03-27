@@ -96,7 +96,7 @@ func main() {
 	if err != nil {
 		logger.Error("failed to register instance", "error", err)
 	}
-	
+
 	dispatcher := worker.NewDispatcher(taskRepo, pool.Tasks(), cfg.WorkerPollInterval, cfg.WorkerBatchSize, workerID, logger)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -104,6 +104,7 @@ func main() {
 	go dispatcher.Run(ctx)
 
 	worker.StartHeartbeat(ctx, instanceRepo, workerID, cfg.HeartbeatInterval, logger)
+	worker.StartInstanceMonitor(ctx, instanceRepo, taskRepo, cfg.InstanceMonitorInterval, cfg.HeartbeatTimeout, logger)
 	worker.StartStaleCleaner(ctx, taskRepo, cfg.WorkerStaleInterval, cfg.WorkerStaleDuration, logger)
 
 	router := chi.NewRouter()
