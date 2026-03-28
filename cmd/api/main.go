@@ -61,15 +61,24 @@ func main() {
 
 	instanceRepo := repository.NewInstanceRepository(db, logger)
 
-	recovered, err := taskRepo.RecoverStaleTasks(context.Background())
+	staleInstances, err := instanceRepo.GetStaleInstances(context.Background(), cfg.HeartbeatTimeout)
 
 	if err != nil {
-		logger.Error("cannot recover stale tasks", "error", err)
+		logger.Error("failed to get stale instances", "error", err)
 		os.Exit(1)
 	}
 
-	if recovered > 0 {
-		logger.Info("stale tasks successfully recovered", "count", recovered)
+	for _, staleInstance := range staleInstances {
+		_, err := taskRepo.RecoverTasksByInstance(context.Background(), staleInstance.ID)
+		if err != nil {
+			logger.Error("failed to recover tasks", "instance_id", staleInstance.ID, "error", err)
+			continue
+		}
+
+		err = instanceRepo.Deregister(context.Background(), staleInstance.ID)
+		if err != nil {
+			logger.Error("failed to deregister instance", "instance_id", staleInstance.ID, "error", err)
+		}
 	}
 
 	executor := worker.NewExecutor(taskRepo, cfg.WorkerTaskTimeout, logger, deadLetterTaskRepo)
