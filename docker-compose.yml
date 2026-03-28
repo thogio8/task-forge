@@ -1,16 +1,39 @@
 services:
-  app:
+  worker-1:
     build: .
-    container_name: taskforge_app
+    environment:
+      - HTTP_PORT=8080
     env_file: .env
     ports:
-      - "${HTTP_PORT}:${HTTP_PORT}"
+      - "8080:8080"
     restart: always
     depends_on:
       - db
+
+  worker-2:
+    build: .
+    environment:
+      - HTTP_PORT=8081
+    env_file: .env
+    ports:
+      - "8081:8081"
+    restart: always
+    depends_on:
+      - db
+
+  worker-3:
+    build: .
+    environment:
+      - HTTP_PORT=8082
+    env_file: .env
+    ports:
+      - "8082:8082"
+    restart: always
+    depends_on:
+      - db
+
   db:
     image: postgres:16-alpine
-    container_name: taskforge_db
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}

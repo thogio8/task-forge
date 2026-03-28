@@ -1,4 +1,4 @@
-.PHONY: up down build test test-unit test-integration test-all logs logs-app logs-db restart db-shell app-shell \
+.PHONY: up down build test test-unit test-integration test-all logs logs-worker logs-db restart db-shell \
        migrate-up migrate-down migrate-create migrate-status migrate-force bench test-race pprof-goroutine
 
 include .env
@@ -28,8 +28,8 @@ test-all: test-unit test-integration
 logs:
 	docker compose logs -f
 
-logs-app:
-	docker compose logs -f app
+logs-worker:
+	docker compose logs -f worker-1 worker-2 worker-3
 
 logs-db:
 	docker compose logs -f db
@@ -38,10 +38,7 @@ restart:
 	docker compose restart
 
 db-shell:
-	docker exec -it taskforge_db psql -U $(DB_USER) -d $(DB_NAME)
-
-app-shell:
-	docker exec -it taskforge_app sh
+	docker compose exec db psql -U $(DB_USER) -d $(DB_NAME)
 
 migrate-up:
 	docker run --rm --network host -v $(PWD)/migrations:/migrations migrate/migrate \
