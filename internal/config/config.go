@@ -50,7 +50,7 @@ func Load() (Config, error) {
 	cfg.WorkerStaleDuration = getEnvOrDefaultDuration("WORKER_STALE_DURATION", 5*time.Minute)
 	cfg.ShutdownTimeout = getEnvOrDefaultDuration("SHUTDOWN_TIMEOUT", 30*time.Second)
 	cfg.InstanceMonitorInterval = getEnvOrDefaultDuration("INSTANCE_MONITOR_INTERVAL", 30*time.Second)
-	cfg.HeartbeatTimeout = getEnvOrDefaultDuration("HEARTBEAT_TIMEOUT", 30*time.Second)
+	cfg.HeartbeatTimeout = getEnvOrDefaultDuration("HEARTBEAT_TIMEOUT", 15*time.Second)
 	cfg.HeartbeatInterval = getEnvOrDefaultDuration("HEARTBEAT_INTERVAL", 5*time.Second)
 	cfg.LeaderInterval = getEnvOrDefaultDuration("LEADER_INTERVAL", 10*time.Second)
 
