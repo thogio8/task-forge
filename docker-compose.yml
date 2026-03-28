@@ -8,7 +8,8 @@ services:
       - "8080:8080"
     restart: always
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
   worker-2:
     build: .
@@ -19,7 +20,8 @@ services:
       - "8081:8081"
     restart: always
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
   worker-3:
     build: .
@@ -30,7 +32,8 @@ services:
       - "8082:8082"
     restart: always
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
   db:
     image: postgres:16-alpine
@@ -44,6 +47,11 @@ services:
     ports:
       - "${DB_PORT}:5432"
     restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
 volumes:
   postgres_data:
