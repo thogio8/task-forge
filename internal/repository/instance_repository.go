@@ -111,6 +111,38 @@ func (i *InstanceRepository) Deregister(ctx context.Context, instanceID string) 
 	return nil
 }
 
+func (i *InstanceRepository) TryAcquireLeader(ctx context.Context) (bool, error) {
+	query := `
+		SELECT PG_TRY_ADVISORY_LOCK(1)
+	`
+
+	var acquired bool
+	err := i.pgxPool.QueryRow(ctx, query).Scan(&acquired)
+
+	if err != nil {
+		i.logger.Error("failed to acquire leader lock", "error", err)
+		return false, apperror.Internal("failed to acquire leader lock", err)
+	}
+
+	return acquired, nil
+}
+
+func (i *InstanceRepository) ReleaseLeader(ctx context.Context) (bool, error) {
+	query := `
+		SELECT PG_ADVISORY_UNLOCK(1)
+	`
+
+	var released bool
+	err := i.pgxPool.QueryRow(ctx, query).Scan(&released)
+
+	if err != nil {
+		i.logger.Error("failed to release leader lock", "error", err)
+		return false, apperror.Internal("failed to release leader lock", err)
+	}
+
+	return released, nil
+}
+
 func scanInstance(s scanner) (model.Instance, error) {
 	var instance model.Instance
 	err := s.Scan(&instance.ID, &instance.LastHeartbeatAt, &instance.StartedAt)

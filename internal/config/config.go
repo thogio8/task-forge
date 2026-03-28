@@ -29,6 +29,7 @@ type Config struct {
 	InstanceMonitorInterval time.Duration
 	HeartbeatTimeout        time.Duration
 	HeartbeatInterval       time.Duration
+	LeaderInterval          time.Duration
 }
 
 func Load() (Config, error) {
@@ -51,6 +52,7 @@ func Load() (Config, error) {
 	cfg.InstanceMonitorInterval = getEnvOrDefaultDuration("INSTANCE_MONITOR_INTERVAL", 30*time.Second)
 	cfg.HeartbeatTimeout = getEnvOrDefaultDuration("HEARTBEAT_TIMEOUT", 30*time.Second)
 	cfg.HeartbeatInterval = getEnvOrDefaultDuration("HEARTBEAT_INTERVAL", 5*time.Second)
+	cfg.LeaderInterval = getEnvOrDefaultDuration("LEADER_INTERVAL", 10*time.Second)
 
 	// Required fields
 	cfg.DBHost, missing = getEnvRequired("DB_HOST", missing)

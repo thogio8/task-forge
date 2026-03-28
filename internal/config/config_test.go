@@ -106,6 +106,10 @@ func TestLoad_DefaultsApplied(t *testing.T) {
 	if cfg.HeartbeatInterval != 5*time.Second {
 		t.Errorf("expected HeartbeatInterval to be 5 seconds, got %v", cfg.HeartbeatInterval)
 	}
+
+	if cfg.LeaderInterval != 10*time.Second {
+		t.Errorf("expected LeaderInterval to be 10 seconds, got %v", cfg.LeaderInterval)
+	}
 }
 
 func TestLoad_DefaultsOverride(t *testing.T) {

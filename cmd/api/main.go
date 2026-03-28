@@ -104,8 +104,13 @@ func main() {
 	go dispatcher.Run(ctx)
 
 	worker.StartHeartbeat(ctx, instanceRepo, workerID, cfg.HeartbeatInterval, logger)
-	worker.StartInstanceMonitor(ctx, instanceRepo, taskRepo, cfg.InstanceMonitorInterval, cfg.HeartbeatTimeout, logger)
-	worker.StartStaleCleaner(ctx, taskRepo, cfg.WorkerStaleInterval, cfg.WorkerStaleDuration, logger)
+
+	coordinator := worker.NewCoordinator(
+		instanceRepo, instanceRepo, taskRepo, taskRepo,
+		cfg.LeaderInterval, cfg.InstanceMonitorInterval, cfg.HeartbeatTimeout,
+		cfg.WorkerStaleInterval, cfg.WorkerStaleDuration, logger,
+	)
+	coordinator.Start(ctx)
 
 	router := chi.NewRouter()
 	router.Use(middleware.Logger)
@@ -163,6 +168,10 @@ func main() {
 
 	pool.Stop()
 	logger.Info("worker pool stopped")
+
+	if _, err := instanceRepo.ReleaseLeader(context.Background()); err != nil {
+		logger.Error("failed to release leader lock", "error", err)
+	}
 
 	if err := instanceRepo.Deregister(context.Background(), workerID); err != nil {
 		logger.Error("failed to deregister instance", "error", err)
