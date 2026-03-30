@@ -1,5 +1,6 @@
 .PHONY: up down build test test-unit test-integration test-all logs logs-worker logs-db restart db-shell \
-       migrate-up migrate-down migrate-create migrate-status migrate-force bench test-race pprof-goroutine
+       migrate-up migrate-down migrate-create migrate-status migrate-force bench test-race pprof-goroutine \
+       kafka-topics kafka-consume
 
 include .env
 export
@@ -68,3 +69,9 @@ test-race:
 
 pprof-goroutine:
 	go tool pprof http://localhost:$(HTTP_PORT)/debug/pprof/goroutine
+
+kafka-topics:
+	docker compose exec kafka kafka-topics --bootstrap-server localhost:9092 --list
+
+kafka-consume:
+	docker compose exec kafka kafka-console-consumer --bootstrap-server localhost:9092 --topic tasks --from-beginning
