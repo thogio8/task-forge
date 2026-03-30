@@ -30,6 +30,12 @@ type Config struct {
 	HeartbeatTimeout        time.Duration
 	HeartbeatInterval       time.Duration
 	LeaderInterval          time.Duration
+	KafkaBrokers            []string
+	KafkaTopic              string
+	KafkaGroupID            string
+	OutboxPollInterval      time.Duration
+	OutboxBatchSize         int
+	OutboxRetention         time.Duration
 }
 
 func Load() (Config, error) {
@@ -43,7 +49,7 @@ func Load() (Config, error) {
 	cfg.LogLevel = getEnvOrDefault("LOG_LEVEL", "info")
 	cfg.LogFormat = getEnvOrDefault("LOG_FORMAT", "json")
 	cfg.WorkerPoolSize = getEnvOrDefaultInt("WORKER_POOL_SIZE", 5)
-	cfg.WorkerPollInterval = getEnvOrDefaultDuration("WORKER_POLL_INTERVAL", 2*time.Second)
+	cfg.WorkerPollInterval = getEnvOrDefaultDuration("WORKER_POLL_INTERVAL", 30*time.Second)
 	cfg.WorkerBatchSize = getEnvOrDefaultInt("WORKER_BATCH_SIZE", 10)
 	cfg.WorkerTaskTimeout = getEnvOrDefaultDuration("WORKER_TASK_TIMEOUT", 30*time.Second)
 	cfg.WorkerStaleInterval = getEnvOrDefaultDuration("WORKER_STALE_INTERVAL", 30*time.Second)
@@ -53,6 +59,12 @@ func Load() (Config, error) {
 	cfg.HeartbeatTimeout = getEnvOrDefaultDuration("HEARTBEAT_TIMEOUT", 15*time.Second)
 	cfg.HeartbeatInterval = getEnvOrDefaultDuration("HEARTBEAT_INTERVAL", 5*time.Second)
 	cfg.LeaderInterval = getEnvOrDefaultDuration("LEADER_INTERVAL", 10*time.Second)
+	cfg.KafkaBrokers = getEnvOrDefaultStrings("KAFKA_BROKERS", []string{"localhost:9092"})
+	cfg.KafkaTopic = getEnvOrDefault("KAFKA_TOPIC", "tasks")
+	cfg.KafkaGroupID = getEnvOrDefault("KAFKA_GROUP_ID", "taskforge-workers")
+	cfg.OutboxPollInterval = getEnvOrDefaultDuration("OUTBOX_POLL_INTERVAL", 1*time.Second)
+	cfg.OutboxBatchSize = getEnvOrDefaultInt("OUTBOX_BATCH_SIZE", 50)
+	cfg.OutboxRetention = getEnvOrDefaultDuration("OUTBOX_RETENTION", 24*time.Hour)
 
 	// Required fields
 	cfg.DBHost, missing = getEnvRequired("DB_HOST", missing)
@@ -151,6 +163,22 @@ func getEnvOrDefaultDuration(key string, defaultValue time.Duration) time.Durati
 	}
 
 	return result
+}
+
+func getEnvOrDefaultStrings(key string, defaultValue []string) []string {
+	envValue := os.Getenv(key)
+
+	if envValue == "" {
+		return defaultValue
+	}
+
+	parts := strings.Split(envValue, ",")
+
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+	}
+
+	return parts
 }
 
 func getEnvRequired(key string, missing []string) (string, []string) {

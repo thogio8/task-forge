@@ -32,6 +32,12 @@ func clearOptionalEnv(t *testing.T) {
 	t.Setenv("HEARTBEAT_TIMEOUT", "")
 	t.Setenv("HEARTBEAT_INTERVAL", "")
 	t.Setenv("LEADER_INTERVAL", "")
+	t.Setenv("KAFKA_BROKERS", "")
+	t.Setenv("KAFKA_TOPIC", "")
+	t.Setenv("KAFKA_GROUP_ID", "")
+	t.Setenv("OUTBOX_POLL_INTERVAL", "")
+	t.Setenv("OUTBOX_BATCH_SIZE", "")
+	t.Setenv("OUTBOX_RETENTION", "")
 }
 
 func TestLoad_AllVarsSet(t *testing.T) {
@@ -94,8 +100,8 @@ func TestLoad_DefaultsApplied(t *testing.T) {
 		t.Errorf("expected WorkerPoolSize to be 5, got %d", cfg.WorkerPoolSize)
 	}
 
-	if cfg.WorkerPollInterval != 2*time.Second {
-		t.Errorf("expected WorkerPollInterval to be 2 seconds, got %v", cfg.WorkerPollInterval)
+	if cfg.WorkerPollInterval != 30*time.Second {
+		t.Errorf("expected WorkerPollInterval to be 30 seconds, got %v", cfg.WorkerPollInterval)
 	}
 
 	if cfg.WorkerBatchSize != 10 {
@@ -132,6 +138,30 @@ func TestLoad_DefaultsApplied(t *testing.T) {
 
 	if cfg.LeaderInterval != 10*time.Second {
 		t.Errorf("expected LeaderInterval to be 10 seconds, got %v", cfg.LeaderInterval)
+	}
+
+	if len(cfg.KafkaBrokers) != 1 || cfg.KafkaBrokers[0] != "localhost:9092" {
+		t.Errorf("expected KafkaBrokers to be [localhost:9092], got %v", cfg.KafkaBrokers)
+	}
+
+	if cfg.KafkaTopic != "tasks" {
+		t.Errorf("expected KafkaTopic to be 'tasks', got %s", cfg.KafkaTopic)
+	}
+
+	if cfg.KafkaGroupID != "taskforge-workers" {
+		t.Errorf("expected KafkaGroupID to be 'taskforge-workers', got %s", cfg.KafkaGroupID)
+	}
+
+	if cfg.OutboxPollInterval != 1*time.Second {
+		t.Errorf("expected OutboxPollInterval to be 1 second, got %v", cfg.OutboxPollInterval)
+	}
+
+	if cfg.OutboxBatchSize != 50 {
+		t.Errorf("expected OutboxBatchSize to be 50, got %d", cfg.OutboxBatchSize)
+	}
+
+	if cfg.OutboxRetention != 24*time.Hour {
+		t.Errorf("expected OutboxRetention to be 24 hours, got %v", cfg.OutboxRetention)
 	}
 }
 
@@ -220,6 +250,28 @@ func TestDatabaseUrl(t *testing.T) {
 
 	if cfg.DatabaseURL() != expectedURL {
 		t.Errorf("expected DatabaseURL to be %s, got %s", expectedURL, cfg.DatabaseURL())
+	}
+}
+
+func TestLoad_KafkaBrokersMultiple(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("KAFKA_BROKERS", "broker1:9092, broker2:9092, broker3:9092")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(cfg.KafkaBrokers) != 3 {
+		t.Fatalf("expected 3 brokers, got %d", len(cfg.KafkaBrokers))
+	}
+
+	if cfg.KafkaBrokers[0] != "broker1:9092" {
+		t.Errorf("expected first broker 'broker1:9092', got '%s'", cfg.KafkaBrokers[0])
+	}
+
+	if cfg.KafkaBrokers[1] != "broker2:9092" {
+		t.Errorf("expected second broker 'broker2:9092' (trimmed), got '%s'", cfg.KafkaBrokers[1])
 	}
 }
 
