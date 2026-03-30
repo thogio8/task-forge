@@ -6,11 +6,36 @@ import (
 	"time"
 )
 
-func TestLoad_AllVarsSet(t *testing.T) {
+func setRequiredEnv(t *testing.T) {
+	t.Helper()
 	t.Setenv("DB_HOST", "localhost")
 	t.Setenv("DB_USER", "testuser")
 	t.Setenv("DB_PASSWORD", "testpassword")
 	t.Setenv("DB_NAME", "testdb")
+}
+
+func clearOptionalEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("HTTP_PORT", "")
+	t.Setenv("DB_PORT", "")
+	t.Setenv("DB_SSL_MODE", "")
+	t.Setenv("LOG_LEVEL", "")
+	t.Setenv("LOG_FORMAT", "")
+	t.Setenv("WORKER_POOL_SIZE", "")
+	t.Setenv("WORKER_POLL_INTERVAL", "")
+	t.Setenv("WORKER_BATCH_SIZE", "")
+	t.Setenv("WORKER_TASK_TIMEOUT", "")
+	t.Setenv("WORKER_STALE_INTERVAL", "")
+	t.Setenv("WORKER_STALE_DURATION", "")
+	t.Setenv("SHUTDOWN_TIMEOUT", "")
+	t.Setenv("INSTANCE_MONITOR_INTERVAL", "")
+	t.Setenv("HEARTBEAT_TIMEOUT", "")
+	t.Setenv("HEARTBEAT_INTERVAL", "")
+	t.Setenv("LEADER_INTERVAL", "")
+}
+
+func TestLoad_AllVarsSet(t *testing.T) {
+	setRequiredEnv(t)
 
 	cfg, err := Load()
 
@@ -36,10 +61,8 @@ func TestLoad_AllVarsSet(t *testing.T) {
 }
 
 func TestLoad_DefaultsApplied(t *testing.T) {
-	t.Setenv("DB_HOST", "localhost")
-	t.Setenv("DB_USER", "testuser")
-	t.Setenv("DB_PASSWORD", "testpassword")
-	t.Setenv("DB_NAME", "testdb")
+	setRequiredEnv(t)
+	clearOptionalEnv(t)
 
 	cfg, err := Load()
 
@@ -113,13 +136,10 @@ func TestLoad_DefaultsApplied(t *testing.T) {
 }
 
 func TestLoad_DefaultsOverride(t *testing.T) {
+	setRequiredEnv(t)
 	t.Setenv("HTTP_PORT", "433")
 	t.Setenv("WORKER_POOL_SIZE", "50")
 	t.Setenv("WORKER_POLL_INTERVAL", "10s")
-	t.Setenv("DB_HOST", "localhost")
-	t.Setenv("DB_USER", "testuser")
-	t.Setenv("DB_PASSWORD", "testpassword")
-	t.Setenv("DB_NAME", "testdb")
 
 	cfg, err := Load()
 
