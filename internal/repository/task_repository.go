@@ -268,6 +268,33 @@ func (t *TaskRepository) ClaimTasks(ctx context.Context, workerID string, limit 
 	return tasks, nil
 }
 
+func (t *TaskRepository) ClaimTask(ctx context.Context, workerID string, taskID uuid.UUID) (*model.Task, error) {
+	query := `
+		UPDATE tasks
+		SET status = 'running', locked_by = $1, locked_at = NOW()
+		WHERE id = $2
+		AND status = 'pending'
+		AND locked_by IS NULL
+		AND (next_retry_at IS NULL OR next_retry_at <= NOW())
+		RETURNING id, status, payload, created_at, updated_at, locked_by, locked_at,
+		          attempt_count, max_retries, last_error, next_retry_at, idempotency_key
+	`
+
+	row := t.pgxPool.QueryRow(ctx, query, workerID, taskID)
+	task, err := scanTask(row)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		t.logger.Error("failed to claim task", "task_id", taskID, "error", err)
+		return nil, apperror.Internal("failed to claim task", err)
+	}
+
+	t.logger.Info("task claimed via event", "task_id", taskID, "worker_id", workerID)
+	return &task, nil
+}
+
 func (t *TaskRepository) CompleteTask(ctx context.Context, id uuid.UUID) error {
 	query := "UPDATE tasks SET status = 'completed', locked_by = NULL, locked_at = NULL WHERE id = $1"
 

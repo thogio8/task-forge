@@ -472,6 +472,93 @@ func TestCreate_WithIdempotencyKey_InsertsOutboxOnce(t *testing.T) {
 	}
 }
 
+func TestClaimTask_Success(t *testing.T) {
+	cleanTasks(t)
+	ctx := context.Background()
+	repo := NewTaskRepository(testPool, testLogger)
+
+	created := createTestTask(t)
+
+	claimed, err := repo.ClaimTask(ctx, "worker-1", created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed == nil {
+		t.Fatal("expected task to be claimed")
+	}
+	if claimed.ID != created.ID {
+		t.Fatalf("expected claimed task ID %s, got %s", created.ID, claimed.ID)
+	}
+	if claimed.Status != model.StatusRunning {
+		t.Errorf("expected status 'running', got '%s'", claimed.Status)
+	}
+	if claimed.LockedBy == nil || *claimed.LockedBy != "worker-1" {
+		t.Error("expected locked_by to be 'worker-1'")
+	}
+	if claimed.LockedAt == nil {
+		t.Error("expected locked_at to be set")
+	}
+}
+
+func TestClaimTask_AlreadyClaimed(t *testing.T) {
+	cleanTasks(t)
+	ctx := context.Background()
+	repo := NewTaskRepository(testPool, testLogger)
+
+	created := createTestTask(t)
+
+	// First claim succeeds
+	claimed, err := repo.ClaimTask(ctx, "worker-1", created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed == nil {
+		t.Fatal("first claim should succeed")
+	}
+
+	// Second claim returns nil (already running)
+	claimed2, err := repo.ClaimTask(ctx, "worker-2", created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed2 != nil {
+		t.Fatal("expected nil for already-claimed task")
+	}
+}
+
+func TestClaimTask_NotFound(t *testing.T) {
+	cleanTasks(t)
+	ctx := context.Background()
+	repo := NewTaskRepository(testPool, testLogger)
+
+	claimed, err := repo.ClaimTask(ctx, "worker-1", uuid.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed != nil {
+		t.Fatal("expected nil for non-existent task")
+	}
+}
+
+func TestClaimTask_RespectsNextRetryAt(t *testing.T) {
+	cleanTasks(t)
+	ctx := context.Background()
+	repo := NewTaskRepository(testPool, testLogger)
+
+	created := createTestTask(t)
+
+	// Set next_retry_at in the future
+	testPool.Exec(ctx, "UPDATE tasks SET next_retry_at = NOW() + INTERVAL '1 hour' WHERE id = $1", created.ID)
+
+	claimed, err := repo.ClaimTask(ctx, "worker-1", created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed != nil {
+		t.Fatal("expected nil for task with future next_retry_at")
+	}
+}
+
 func cleanTasks(t *testing.T) {
 	t.Helper()
 	_, err := testPool.Exec(context.Background(), "DELETE FROM tasks")
