@@ -392,6 +392,85 @@ func TestUnlockStaleTasks(t *testing.T) {
 	}
 }
 
+func TestCreate_InsertsOutboxEvent(t *testing.T) {
+	cleanTasks(t)
+	cleanOutbox(t)
+	ctx := context.Background()
+	repo := NewTaskRepository(testPool, testLogger)
+
+	task := &model.Task{
+		Status:  model.StatusPending,
+		Payload: []byte(`{"type":"echo"}`),
+	}
+
+	created, err := repo.Create(ctx, task)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created {
+		t.Fatal("expected task to be created")
+	}
+
+	// Verify outbox event was created atomically
+	var count int
+	testPool.QueryRow(ctx, "SELECT COUNT(*) FROM outbox WHERE event_type = 'task.created'").Scan(&count)
+	if count != 1 {
+		t.Fatalf("expected 1 outbox event, got %d", count)
+	}
+
+	// Verify the outbox payload contains the correct task ID
+	var payload []byte
+	testPool.QueryRow(ctx, "SELECT payload FROM outbox WHERE event_type = 'task.created'").Scan(&payload)
+
+	expectedPayload := fmt.Sprintf(`{"task_id": "%s", "event_type": "task.created"}`, task.ID)
+	if string(payload) != expectedPayload {
+		t.Fatalf("expected outbox payload %s, got %s", expectedPayload, string(payload))
+	}
+}
+
+func TestCreate_WithIdempotencyKey_InsertsOutboxOnce(t *testing.T) {
+	cleanTasks(t)
+	cleanOutbox(t)
+	ctx := context.Background()
+	repo := NewTaskRepository(testPool, testLogger)
+
+	key := "dedup-outbox-test"
+
+	// First create — should insert task + outbox event
+	task1 := &model.Task{
+		Status:         model.StatusPending,
+		Payload:        []byte(`{"type":"echo"}`),
+		IdempotencyKey: &key,
+	}
+	created, err := repo.Create(ctx, task1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created {
+		t.Fatal("expected first task to be created")
+	}
+
+	// Second create (duplicate) — should NOT insert outbox event
+	task2 := &model.Task{
+		Status:         model.StatusPending,
+		Payload:        []byte(`{"type":"echo"}`),
+		IdempotencyKey: &key,
+	}
+	created, err = repo.Create(ctx, task2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created {
+		t.Fatal("expected duplicate to not be created")
+	}
+
+	// Only 1 outbox event should exist
+	var count int
+	testPool.QueryRow(ctx, "SELECT COUNT(*) FROM outbox").Scan(&count)
+	if count != 1 {
+		t.Fatalf("expected 1 outbox event (no duplicate), got %d", count)
+	}
+}
 
 func cleanTasks(t *testing.T) {
 	t.Helper()

@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -27,10 +28,22 @@ func NewTaskRepository(pool *pgxpool.Pool, logger *slog.Logger) *TaskRepository 
 }
 
 func (t *TaskRepository) Create(ctx context.Context, task *model.Task) (bool, error) {
-	if task.IdempotencyKey == nil {
-		query := `INSERT INTO tasks (status, payload) VALUES ($1, $2) RETURNING id, created_at, updated_at`
+	tx, err := t.pgxPool.Begin(ctx)
 
-		row := t.pgxPool.QueryRow(ctx, query, task.Status, task.Payload)
+	if err != nil {
+		t.logger.Error("failed to start transaction", "error", err)
+		return false, apperror.Internal("failed to start transaction", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if task.IdempotencyKey == nil {
+		query := `
+			INSERT INTO tasks (status, payload)
+			VALUES ($1, $2)
+			RETURNING id, created_at, updated_at
+		`
+
+		row := tx.QueryRow(ctx, query, task.Status, task.Payload)
 
 		err := row.Scan(&task.ID, &task.CreatedAt, &task.UpdatedAt)
 		if err != nil {
@@ -39,19 +52,31 @@ func (t *TaskRepository) Create(ctx context.Context, task *model.Task) (bool, er
 		}
 
 		t.logger.Info("task created", "task_id", task.ID)
+
+		err = t.insertOutboxEvent(ctx, tx, task.ID)
+		if err != nil {
+			return false, err
+		}
+
+		err = tx.Commit(ctx)
+		if err != nil {
+			t.logger.Error("failed to commit transaction", "error", err)
+			return false, apperror.Internal("failed to commit transaction", err)
+		}
+
 		return true, nil
 	}
 
 	query := `
 		INSERT INTO tasks (status, payload, idempotency_key)
-		VALUES ($1, $2, $3) 
+		VALUES ($1, $2, $3)
 		ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
 		RETURNING id, created_at, updated_at
 	`
 
-	row := t.pgxPool.QueryRow(ctx, query, task.Status, task.Payload, task.IdempotencyKey)
+	row := tx.QueryRow(ctx, query, task.Status, task.Payload, task.IdempotencyKey)
 
-	err := row.Scan(&task.ID, &task.CreatedAt, &task.UpdatedAt)
+	err = row.Scan(&task.ID, &task.CreatedAt, &task.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			query = `
@@ -74,6 +99,17 @@ func (t *TaskRepository) Create(ctx context.Context, task *model.Task) (bool, er
 
 		t.logger.Error("failed to create task", "error", err)
 		return false, apperror.Internal("failed to create task", err)
+	}
+
+	err = t.insertOutboxEvent(ctx, tx, task.ID)
+	if err != nil {
+		return false, err
+	}
+
+	err = tx.Commit(ctx)
+	if err != nil {
+		t.logger.Error("failed to commit transaction", "error", err)
+		return false, apperror.Internal("failed to commit transaction", err)
 	}
 
 	return true, nil
@@ -316,8 +352,6 @@ func (t *TaskRepository) UnlockStaleTasks(ctx context.Context, staleDuration tim
 	return unlocked, nil
 }
 
-
-
 func (t *TaskRepository) RecoverTasksByInstance(ctx context.Context, instanceID string) (int, error) {
 	query := `
 		UPDATE tasks
@@ -349,4 +383,23 @@ func scanTask(s scanner) (model.Task, error) {
 		&task.IdempotencyKey,
 	)
 	return task, err
+}
+
+func (t *TaskRepository) insertOutboxEvent(ctx context.Context, tx pgx.Tx, taskID uuid.UUID) error {
+	eventType := "task.created"
+	payload := fmt.Sprintf(`{"task_id":"%s","event_type":"%s"}`, taskID, eventType)
+
+	query := `
+		INSERT INTO outbox (event_type, payload)
+		VALUES ($1, $2)
+	`
+
+	_, err := tx.Exec(ctx, query, eventType, payload)
+
+	if err != nil {
+		t.logger.Error("failed to insert outbox event", "error", err)
+		return apperror.Internal("failed to insert outbox event", err)
+	}
+
+	return nil
 }
