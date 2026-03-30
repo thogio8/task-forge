@@ -11,8 +11,9 @@ import (
 )
 
 type InstanceRepository struct {
-	pgxPool *pgxpool.Pool
-	logger  *slog.Logger
+	pgxPool    *pgxpool.Pool
+	leaderConn *pgxpool.Conn
+	logger     *slog.Logger
 }
 
 func NewInstanceRepository(pool *pgxpool.Pool, logger *slog.Logger) *InstanceRepository {
@@ -112,35 +113,63 @@ func (i *InstanceRepository) Deregister(ctx context.Context, instanceID string) 
 }
 
 func (i *InstanceRepository) TryAcquireLeader(ctx context.Context) (bool, error) {
+	if i.leaderConn != nil {
+		return true, nil
+	}
+
+	conn, err := i.pgxPool.Acquire(ctx)
+
+	if err != nil {
+		i.logger.Error("failed to acquire leader connection", "error", err)
+		return false, apperror.Internal("failed to acquire leader connection", err)
+	}
+
 	query := `
-		SELECT PG_TRY_ADVISORY_LOCK(1)
+			SELECT PG_TRY_ADVISORY_LOCK(1)
 	`
 
 	var acquired bool
-	err := i.pgxPool.QueryRow(ctx, query).Scan(&acquired)
+	err = conn.QueryRow(ctx, query).Scan(&acquired)
 
 	if err != nil {
-		i.logger.Error("failed to acquire leader lock", "error", err)
-		return false, apperror.Internal("failed to acquire leader lock", err)
+		conn.Release()
+		i.logger.Error("failed to acquire leader connection", "error", err)
+		return false, apperror.Internal("failed to acquire leader connection", err)
 	}
 
+	if !acquired {
+		conn.Release()
+		return false, nil
+	}
+
+	i.leaderConn = conn
 	return acquired, nil
+
 }
 
 func (i *InstanceRepository) ReleaseLeader(ctx context.Context) (bool, error) {
+	if i.leaderConn == nil {
+		return false, nil
+	}
+
+	conn := i.leaderConn
+	i.leaderConn = nil
+
+	defer conn.Release()
+
 	query := `
 		SELECT PG_ADVISORY_UNLOCK(1)
 	`
 
 	var released bool
-	err := i.pgxPool.QueryRow(ctx, query).Scan(&released)
+	err := conn.QueryRow(ctx, query).Scan(&released)
 
 	if err != nil {
-		i.logger.Error("failed to release leader lock", "error", err)
-		return false, apperror.Internal("failed to release leader lock", err)
+		i.logger.Error("failed to release leader connection", "error", err)
+		return false, apperror.Internal("failed to release leader connection", err)
 	}
 
-	return released, nil
+	return true, nil
 }
 
 func scanInstance(s scanner) (model.Instance, error) {
