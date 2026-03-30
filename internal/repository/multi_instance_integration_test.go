@@ -69,7 +69,7 @@ func TestMultiInstance_DeadInstanceRecovery(t *testing.T) {
 	cleanInstances(t)
 
 	taskRepo := NewTaskRepository(testPool, testLogger)
-	instanceRepo := NewInstanceRepository(testPool, testLogger)
+	instanceRepo := NewInstanceRepository(testPool, testLogger, 9999)
 
 	// Register two instances
 	err := instanceRepo.Register(context.Background(), "instance-A")
@@ -173,8 +173,8 @@ func TestMultiInstance_LeaderElection(t *testing.T) {
 	}
 	defer poolB.Close()
 
-	repoA := NewInstanceRepository(poolA, testLogger)
-	repoB := NewInstanceRepository(poolB, testLogger)
+	repoA := NewInstanceRepository(poolA, testLogger, 9999)
+	repoB := NewInstanceRepository(poolB, testLogger, 9999)
 
 	// Instance A tries to become leader
 	acquiredA, err := repoA.TryAcquireLeader(context.Background())
@@ -221,7 +221,7 @@ func TestMultiInstance_StartupRecovery_IgnoresLiveInstances(t *testing.T) {
 	cleanInstances(t)
 
 	taskRepo := NewTaskRepository(testPool, testLogger)
-	instanceRepo := NewInstanceRepository(testPool, testLogger)
+	instanceRepo := NewInstanceRepository(testPool, testLogger, 9999)
 
 	// Register two instances
 	err := instanceRepo.Register(context.Background(), "live-instance")

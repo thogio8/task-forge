@@ -13,11 +13,12 @@ import (
 type InstanceRepository struct {
 	pgxPool    *pgxpool.Pool
 	leaderConn *pgxpool.Conn
+	lockKey    int64
 	logger     *slog.Logger
 }
 
-func NewInstanceRepository(pool *pgxpool.Pool, logger *slog.Logger) *InstanceRepository {
-	return &InstanceRepository{pgxPool: pool, logger: logger}
+func NewInstanceRepository(pool *pgxpool.Pool, logger *slog.Logger, lockKey int64) *InstanceRepository {
+	return &InstanceRepository{pgxPool: pool, lockKey: lockKey, logger: logger}
 }
 
 func (i *InstanceRepository) Register(ctx context.Context, instanceID string) error {
@@ -125,11 +126,11 @@ func (i *InstanceRepository) TryAcquireLeader(ctx context.Context) (bool, error)
 	}
 
 	query := `
-			SELECT PG_TRY_ADVISORY_LOCK(1)
+			SELECT PG_TRY_ADVISORY_LOCK($1)
 	`
 
 	var acquired bool
-	err = conn.QueryRow(ctx, query).Scan(&acquired)
+	err = conn.QueryRow(ctx, query, i.lockKey).Scan(&acquired)
 
 	if err != nil {
 		conn.Release()
@@ -158,11 +159,11 @@ func (i *InstanceRepository) ReleaseLeader(ctx context.Context) (bool, error) {
 	defer conn.Release()
 
 	query := `
-		SELECT PG_ADVISORY_UNLOCK(1)
+		SELECT PG_ADVISORY_UNLOCK($1)
 	`
 
 	var released bool
-	err := conn.QueryRow(ctx, query).Scan(&released)
+	err := conn.QueryRow(ctx, query, i.lockKey).Scan(&released)
 
 	if err != nil {
 		i.logger.Error("failed to release leader connection", "error", err)

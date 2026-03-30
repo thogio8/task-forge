@@ -59,7 +59,7 @@ func main() {
 	deadLetterTaskRepo := repository.NewDeadLetterRepository(db, logger)
 	deadLetterTaskHandler := handler.NewDeadLetterTaskHandler(deadLetterTaskRepo, logger)
 
-	instanceRepo := repository.NewInstanceRepository(db, logger)
+	instanceRepo := repository.NewInstanceRepository(db, logger, 1)
 
 	staleInstances, err := instanceRepo.GetStaleInstances(context.Background(), cfg.HeartbeatTimeout)
 

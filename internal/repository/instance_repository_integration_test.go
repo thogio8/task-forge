@@ -13,7 +13,7 @@ import (
 func TestRegisterAndHeartbeat(t *testing.T) {
 	cleanInstances(t)
 
-	repo := NewInstanceRepository(testPool, testLogger)
+	repo := NewInstanceRepository(testPool, testLogger, 9999)
 
 	err := repo.Register(context.Background(), "test-instance-1")
 	if err != nil {
@@ -29,7 +29,7 @@ func TestRegisterAndHeartbeat(t *testing.T) {
 func TestGetStaleInstances(t *testing.T) {
 	cleanInstances(t)
 
-	repo := NewInstanceRepository(testPool, testLogger)
+	repo := NewInstanceRepository(testPool, testLogger, 9999)
 
 	err := repo.Register(context.Background(), "test-instance-stale")
 	if err != nil {
@@ -59,7 +59,7 @@ func TestGetStaleInstances(t *testing.T) {
 func TestDeregister(t *testing.T) {
 	cleanInstances(t)
 
-	repo := NewInstanceRepository(testPool, testLogger)
+	repo := NewInstanceRepository(testPool, testLogger, 9999)
 
 	err := repo.Register(context.Background(), "test-instance-remove")
 	if err != nil {
@@ -87,7 +87,7 @@ func TestRecoverTasksByInstance(t *testing.T) {
 	cleanInstances(t)
 
 	taskRepo := NewTaskRepository(testPool, testLogger)
-	instanceRepo := NewInstanceRepository(testPool, testLogger)
+	instanceRepo := NewInstanceRepository(testPool, testLogger, 9999)
 
 	// Register a fake instance
 	err := instanceRepo.Register(context.Background(), "dead-instance-1")
