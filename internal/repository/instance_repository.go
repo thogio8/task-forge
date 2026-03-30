@@ -126,7 +126,7 @@ func (i *InstanceRepository) TryAcquireLeader(ctx context.Context) (bool, error)
 	}
 
 	query := `
-			SELECT PG_TRY_ADVISORY_LOCK($1)
+		SELECT PG_TRY_ADVISORY_LOCK($1)
 	`
 
 	var acquired bool
