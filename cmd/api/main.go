@@ -20,6 +20,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/thogio8/task-forge/internal/config"
 	"github.com/thogio8/task-forge/internal/handler"
+	taskforgeKafka "github.com/thogio8/task-forge/internal/kafka"
 	"github.com/thogio8/task-forge/internal/model"
 	"github.com/thogio8/task-forge/internal/repository"
 	"github.com/thogio8/task-forge/internal/worker"
@@ -81,7 +82,11 @@ func main() {
 		}
 	}
 
+	outboxRepo := repository.NewOutboxRepository(db, logger)
+
 	executor := worker.NewExecutor(taskRepo, cfg.WorkerTaskTimeout, logger, deadLetterTaskRepo)
+
+	kafkaProducer := taskforgeKafka.NewProducer(cfg.KafkaBrokers, cfg.KafkaTopic, logger)
 
 	executor.Register("echo", handlers.Echo(logger))
 
@@ -111,6 +116,15 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go dispatcher.Run(ctx)
+
+	outboxPublisher := worker.NewOutboxPublisher(outboxRepo, kafkaProducer, cfg.OutboxPollInterval, cfg.OutboxBatchSize, cfg.OutboxRetention, logger)
+
+	go outboxPublisher.Run(ctx)
+
+	kafkaConsumerCtx, kafkaConsumerCancel := context.WithCancel(context.Background())
+	kafkaConsumer := taskforgeKafka.NewConsumer(cfg.KafkaBrokers, cfg.KafkaTopic, cfg.KafkaGroupID, taskRepo, pool.Tasks(), workerID, logger)
+
+	go kafkaConsumer.Run(kafkaConsumerCtx)
 
 	worker.StartHeartbeat(ctx, instanceRepo, workerID, cfg.HeartbeatInterval, logger)
 
@@ -173,10 +187,24 @@ func main() {
 	logger.Info("http server stopped")
 
 	cancel()
+	kafkaConsumerCancel()
+
+	outboxPublisher.Stop()
+	logger.Info("outbox publisher stopped")
+
+	kafkaConsumer.Stop()
+	logger.Info("kafka consumer stopped")
+
 	dispatcher.Stop()
+	logger.Info("dispatcher stopped")
 
 	pool.Stop()
 	logger.Info("worker pool stopped")
+
+	if err = kafkaProducer.Close(); err != nil {
+		logger.Error("failed to close kafka producer", "error", err)
+	}
+	logger.Info("kafka producer stopped")
 
 	if _, err := instanceRepo.ReleaseLeader(context.Background()); err != nil {
 		logger.Error("failed to release leader lock", "error", err)
