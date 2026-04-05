@@ -2,7 +2,6 @@ package kafka
 
 import (
 	"context"
-	"log/slog"
 
 	kafkago "github.com/segmentio/kafka-go"
 )
@@ -10,10 +9,9 @@ import (
 type Producer struct {
 	writeFn func(ctx context.Context, key string, value []byte) error
 	closeFn func() error
-	logger  *slog.Logger
 }
 
-func NewProducer(brokers []string, topic string, logger *slog.Logger) *Producer {
+func NewProducer(brokers []string, topic string) *Producer {
 	w := &kafkago.Writer{
 		Addr:     kafkago.TCP(brokers...),
 		Topic:    topic,
@@ -28,7 +26,6 @@ func NewProducer(brokers []string, topic string, logger *slog.Logger) *Producer 
 			})
 		},
 		closeFn: w.Close,
-		logger:  logger,
 	}
 }
 

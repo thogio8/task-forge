@@ -86,7 +86,7 @@ func main() {
 
 	executor := worker.NewExecutor(taskRepo, cfg.WorkerTaskTimeout, logger, deadLetterTaskRepo)
 
-	kafkaProducer := taskforgeKafka.NewProducer(cfg.KafkaBrokers, cfg.KafkaTopic, logger)
+	kafkaProducer := taskforgeKafka.NewProducer(cfg.KafkaBrokers, cfg.KafkaTopic)
 
 	executor.Register("echo", handlers.Echo(logger))
 
