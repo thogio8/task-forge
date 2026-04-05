@@ -55,7 +55,7 @@ func (o *OutboxPublisher) Run(ctx context.Context) {
 			var outboxEventsIDs []int64
 
 			if err != nil {
-				o.logger.Error("failed to retrieve unpublished outbox events", "err", err)
+				o.logger.Error("failed to retrieve unpublished outbox events", "error", err)
 				continue
 			}
 
@@ -63,7 +63,7 @@ func (o *OutboxPublisher) Run(ctx context.Context) {
 				err = o.producer.Publish(ctx, extractTaskID(outboxEvent.Payload), outboxEvent.Payload)
 
 				if err != nil {
-					o.logger.Error("failed to publish outbox event", "outbox_event_id", outboxEvent.ID, "err", err)
+					o.logger.Error("failed to publish outbox event", "outbox_event_id", outboxEvent.ID, "error", err)
 					continue
 				}
 
@@ -74,7 +74,7 @@ func (o *OutboxPublisher) Run(ctx context.Context) {
 				err = o.repo.MarkPublished(ctx, outboxEventsIDs)
 
 				if err != nil {
-					o.logger.Error("failed to mark outbox events as published", "err", err)
+					o.logger.Error("failed to mark outbox events as published", "error", err)
 					continue
 				}
 			}
@@ -82,7 +82,7 @@ func (o *OutboxPublisher) Run(ctx context.Context) {
 			err = o.repo.Purge(ctx, o.retention)
 
 			if err != nil {
-				o.logger.Error("failed to purge outbox events", "err", err)
+				o.logger.Error("failed to purge outbox events", "error", err)
 				continue
 			}
 
