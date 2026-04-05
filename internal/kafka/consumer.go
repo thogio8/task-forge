@@ -93,39 +93,40 @@ func (c *Consumer) processMessage(ctx context.Context, msg kafkago.Message) {
 	}
 
 	if err := json.Unmarshal(msg.Value, &data); err != nil {
-		c.logger.Error("failed to unmarshal kafka message", "error", err)
+		c.logger.Error("failed to unmarshal kafka message", "worker_id", c.workerID, "error", err)
 		if commitErr := c.reader.CommitMessages(ctx, msg); commitErr != nil {
-			c.logger.Warn("failed to commit kafka message", "error", commitErr)
+			c.logger.Warn("failed to commit kafka message", "worker_id", c.workerID, "error", commitErr)
 		}
 		return
 	}
 
 	taskID, err := uuid.Parse(data.TaskID)
 	if err != nil {
-		c.logger.Error("invalid task ID in kafka message", "task_id", data.TaskID, "error", err)
+		c.logger.Error("invalid task ID in kafka message", "worker_id", c.workerID, "task_id", data.TaskID, "error", err)
+
 		if commitErr := c.reader.CommitMessages(ctx, msg); commitErr != nil {
-			c.logger.Warn("failed to commit kafka message", "error", commitErr)
+			c.logger.Warn("failed to commit kafka message", "worker_id", c.workerID, "error", commitErr)
 		}
 		return
 	}
 
 	task, err := c.claimer.ClaimTask(ctx, c.workerID, taskID)
 	if err != nil {
-		c.logger.Error("failed to claim task from kafka event", "task_id", taskID, "error", err)
+		c.logger.Error("failed to claim task from kafka event", "worker_id", c.workerID, "task_id", taskID, "error", err)
 		return
 	}
 
 	if task == nil {
-		c.logger.Debug("task already claimed or not found", "task_id", taskID)
+		c.logger.Debug("task already claimed or not found", "worker_id", c.workerID, "task_id", taskID)
 		if commitErr := c.reader.CommitMessages(ctx, msg); commitErr != nil {
-			c.logger.Warn("failed to commit kafka message", "error", commitErr)
+			c.logger.Warn("failed to commit kafka message", "worker_id", c.workerID, "error", commitErr)
 		}
 		return
 	}
 
 	c.tasks <- *task
 	if commitErr := c.reader.CommitMessages(ctx, msg); commitErr != nil {
-		c.logger.Warn("failed to commit kafka message", "error", commitErr)
+		c.logger.Warn("failed to commit kafka message", "worker_id", c.workerID, "error", commitErr)
 	}
-	c.logger.Info("task dispatched from kafka", "task_id", taskID)
+	c.logger.Info("task dispatched from kafka", "worker_id", c.workerID, "task_id", taskID)
 }
