@@ -36,6 +36,9 @@ type Config struct {
 	OutboxPollInterval      time.Duration
 	OutboxBatchSize         int
 	OutboxRetention         time.Duration
+	OtelCollectorEndpoint   string
+	OtelServiceName         string
+	OtelExportInterval      time.Duration
 }
 
 func Load() (Config, error) {
@@ -65,6 +68,9 @@ func Load() (Config, error) {
 	cfg.OutboxPollInterval = getEnvOrDefaultDuration("OUTBOX_POLL_INTERVAL", 1*time.Second)
 	cfg.OutboxBatchSize = getEnvOrDefaultInt("OUTBOX_BATCH_SIZE", 50)
 	cfg.OutboxRetention = getEnvOrDefaultDuration("OUTBOX_RETENTION", 24*time.Hour)
+	cfg.OtelCollectorEndpoint = getEnvOrDefault("OTEL_COLLECTOR_ENDPOINT", "localhost:4317")
+	cfg.OtelServiceName = getEnvOrDefault("OTEL_SERVICE_NAME", "taskforge")
+	cfg.OtelExportInterval = getEnvOrDefaultDuration("OTEL_EXPORT_INTERVAL", 15*time.Second)
 
 	// Required fields
 	cfg.DBHost, missing = getEnvRequired("DB_HOST", missing)

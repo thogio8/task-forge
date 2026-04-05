@@ -38,6 +38,9 @@ func clearOptionalEnv(t *testing.T) {
 	t.Setenv("OUTBOX_POLL_INTERVAL", "")
 	t.Setenv("OUTBOX_BATCH_SIZE", "")
 	t.Setenv("OUTBOX_RETENTION", "")
+	t.Setenv("OTEL_COLLECTOR_ENDPOINT", "")
+	t.Setenv("OTEL_SERVICE_NAME", "")
+	t.Setenv("OTEL_EXPORT_INTERVAL", "")
 }
 
 func TestLoad_AllVarsSet(t *testing.T) {
@@ -162,6 +165,18 @@ func TestLoad_DefaultsApplied(t *testing.T) {
 
 	if cfg.OutboxRetention != 24*time.Hour {
 		t.Errorf("expected OutboxRetention to be 24 hours, got %v", cfg.OutboxRetention)
+	}
+
+	if cfg.OtelCollectorEndpoint != "localhost:4317" {
+		t.Errorf("expected OtelCollectorEndpoint to be 'localhost:4317', got %s", cfg.OtelCollectorEndpoint)
+	}
+
+	if cfg.OtelServiceName != "taskforge" {
+		t.Errorf("expected OtelServiceName to be 'taskforge', got %s", cfg.OtelServiceName)
+	}
+
+	if cfg.OtelExportInterval != 15*time.Second {
+		t.Errorf("expected OtelExportInterval to be 15 seconds, got %v", cfg.OtelExportInterval)
 	}
 }
 
