@@ -1,6 +1,6 @@
 .PHONY: up down build test test-unit test-integration test-all logs logs-worker logs-db restart db-shell \
        migrate-up migrate-down migrate-create migrate-status migrate-force bench test-race pprof-goroutine \
-       kafka-topics kafka-consume
+       kafka-topics kafka-consume grafana
 
 include .env
 export
@@ -75,3 +75,7 @@ kafka-topics:
 
 kafka-consume:
 	docker compose exec kafka kafka-console-consumer --bootstrap-server localhost:9092 --topic tasks --from-beginning
+
+grafana:
+	@echo "Grafana:    http://localhost:3000 (admin/admin)"
+	@echo "Prometheus: http://localhost:9090"

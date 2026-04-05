@@ -4,6 +4,7 @@ services:
     environment:
       - HTTP_PORT=8080
       - KAFKA_BROKERS=kafka:29092
+      - OTEL_COLLECTOR_ENDPOINT=otel-collector:4317
     env_file: .env
     ports:
       - "8080:8080"
@@ -13,12 +14,15 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
 
   worker-2:
     build: .
     environment:
       - HTTP_PORT=8081
       - KAFKA_BROKERS=kafka:29092
+      - OTEL_COLLECTOR_ENDPOINT=otel-collector:4317
     env_file: .env
     ports:
       - "8081:8081"
@@ -28,12 +32,15 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
 
   worker-3:
     build: .
     environment:
       - HTTP_PORT=8082
       - KAFKA_BROKERS=kafka:29092
+      - OTEL_COLLECTOR_ENDPOINT=otel-collector:4317
     env_file: .env
     ports:
       - "8082:8082"
@@ -43,6 +50,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.0
@@ -84,6 +93,41 @@ services:
       - kafka
     restart: always
 
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    volumes:
+      - ./infra/otel-collector/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml
+    ports:
+      - "4317:4317"
+      - "8889:8889"
+    restart: always
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    depends_on:
+      - otel-collector
+    restart: always
+
+  grafana:
+    image: grafana/grafana:latest
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+    depends_on:
+      - prometheus
+    restart: always
 
   db:
     image: postgres:16-alpine
