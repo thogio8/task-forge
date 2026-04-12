@@ -16,6 +16,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 
+	"go.opentelemetry.io/otel"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/thogio8/task-forge/internal/config"
@@ -23,6 +25,7 @@ import (
 	taskforgeKafka "github.com/thogio8/task-forge/internal/kafka"
 	"github.com/thogio8/task-forge/internal/model"
 	"github.com/thogio8/task-forge/internal/repository"
+	"github.com/thogio8/task-forge/internal/telemetry"
 	"github.com/thogio8/task-forge/internal/worker"
 	"github.com/thogio8/task-forge/internal/worker/handlers"
 )
@@ -40,6 +43,16 @@ func main() {
 
 	logger := cfg.GetSlogLogger()
 	slog.SetDefault(logger)
+
+	tel, err := telemetry.Setup(context.Background(), telemetry.Config{
+		CollectorEndpoint: cfg.OtelCollectorEndpoint,
+		ServiceName:       cfg.OtelServiceName,
+		ExportInterval:    cfg.OtelExportInterval,
+	})
+	if err != nil {
+		logger.Error("Failed to setup telemetry", "error", err)
+		os.Exit(1)
+	}
 
 	db, err := pgxpool.New(context.Background(), cfg.DatabaseURL())
 	if err != nil {
@@ -137,6 +150,7 @@ func main() {
 
 	router := chi.NewRouter()
 	router.Use(middleware.Logger)
+	router.Use(telemetry.HTTPMetrics(otel.Meter("taskforge.http")))
 
 	router.Get("/health", handler.HealthCheck)
 	router.Post("/tasks", taskHandler.CreateTask)
@@ -200,6 +214,11 @@ func main() {
 
 	pool.Stop()
 	logger.Info("worker pool stopped")
+
+	if err := tel.Shutdown(shutdownCtx); err != nil {
+		logger.Error("telemetry shutdown error", "error", err)
+	}
+	logger.Info("telemetry stopped")
 
 	if err = kafkaProducer.Close(); err != nil {
 		logger.Error("failed to close kafka producer", "error", err)
