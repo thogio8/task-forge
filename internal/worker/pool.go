@@ -1,27 +1,53 @@
 package worker
 
 import (
+	"context"
 	"log/slog"
 	"sync"
 	"sync/atomic"
 
 	"github.com/thogio8/task-forge/internal/model"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric"
 )
 
 type Pool struct {
-	workerCount int
-	processFunc func(model.Task)
-	tasks       chan model.Task
-	wg          sync.WaitGroup
-	logger      *slog.Logger
-	processed   atomic.Int64
-	active      atomic.Int64
+	workerCount   int
+	processFunc   func(model.Task)
+	tasks         chan model.Task
+	wg            sync.WaitGroup
+	logger        *slog.Logger
+	processed     atomic.Int64
+	active        atomic.Int64
+	activeWorkers metric.Int64UpDownCounter
 }
 
 func NewPool(workerCount int, processFunc func(model.Task), logger *slog.Logger) *Pool {
 	bufferedChannel := make(chan model.Task, workerCount*2)
 
-	return &Pool{workerCount: workerCount, processFunc: processFunc, tasks: bufferedChannel, logger: logger}
+	meter := otel.Meter("taskforge.pool")
+
+	activeWorkers, _ := meter.Int64UpDownCounter(
+		"pool.active_workers",
+		metric.WithDescription("Number of active workers."),
+	)
+
+	_, _ = meter.Int64ObservableGauge(
+		"pool.queue_depth",
+		metric.WithDescription("Number of tasks waiting in the pool channel."),
+		metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
+			o.Observe(int64(len(bufferedChannel)))
+			return nil
+		}),
+	)
+
+	return &Pool{
+		workerCount:   workerCount,
+		processFunc:   processFunc,
+		tasks:         bufferedChannel,
+		logger:        logger,
+		activeWorkers: activeWorkers,
+	}
 }
 
 func (p *Pool) Start() {
@@ -32,7 +58,9 @@ func (p *Pool) Start() {
 			defer p.wg.Done()
 			for task := range p.tasks {
 				p.active.Add(1)
+				p.activeWorkers.Add(context.Background(), 1)
 				p.processFunc(task)
+				p.activeWorkers.Add(context.Background(), -1)
 				p.active.Add(-1)
 				p.processed.Add(1)
 			}
