@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/thogio8/task-forge/internal/model"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric"
 )
 
 type DispatcherRepository interface {
@@ -13,24 +15,41 @@ type DispatcherRepository interface {
 }
 
 type Dispatcher struct {
-	repo         DispatcherRepository
-	tasks        chan<- model.Task
-	pollInterval time.Duration
-	batchSize    int
-	workerID     string
-	logger       *slog.Logger
-	done         chan struct{}
+	repo           DispatcherRepository
+	tasks          chan<- model.Task
+	pollInterval   time.Duration
+	batchSize      int
+	workerID       string
+	logger         *slog.Logger
+	done           chan struct{}
+	claimedCounter metric.Int64Counter
+	pollDuration   metric.Float64Histogram
 }
 
 func NewDispatcher(repo DispatcherRepository, tasks chan<- model.Task, pollInterval time.Duration, batchSize int, workerID string, logger *slog.Logger) *Dispatcher {
+	meter := otel.Meter("taskforge.dispatcher")
+
+	claimedCounter, _ := meter.Int64Counter(
+		"dispatcher.claimed.count",
+		metric.WithDescription("Number of tasks claimed by dispatcher polling."),
+	)
+
+	pollDuration, _ := meter.Float64Histogram(
+		"dispatcher.poll.duration",
+		metric.WithDescription("Duration of dispatcher DB poll in seconds."),
+		metric.WithUnit("s"),
+	)
+
 	return &Dispatcher{
-		repo:         repo,
-		tasks:        tasks,
-		pollInterval: pollInterval,
-		batchSize:    batchSize,
-		workerID:     workerID,
-		logger:       logger,
-		done:         make(chan struct{}),
+		repo:           repo,
+		tasks:          tasks,
+		pollInterval:   pollInterval,
+		batchSize:      batchSize,
+		workerID:       workerID,
+		logger:         logger,
+		done:           make(chan struct{}),
+		claimedCounter: claimedCounter,
+		pollDuration:   pollDuration,
 	}
 }
 
@@ -43,7 +62,9 @@ func (d *Dispatcher) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
+			start := time.Now()
 			tasks, err := d.repo.ClaimTasks(ctx, d.workerID, d.batchSize)
+			d.pollDuration.Record(ctx, time.Since(start).Seconds())
 
 			if err != nil {
 				d.logger.Error("failed to claim tasks", "error", err)
@@ -51,6 +72,7 @@ func (d *Dispatcher) Run(ctx context.Context) {
 			}
 
 			if len(tasks) > 0 {
+				d.claimedCounter.Add(ctx, int64(len(tasks)))
 				d.logger.Info("tasks claimed", "count", len(tasks))
 			}
 
