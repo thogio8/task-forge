@@ -36,14 +36,7 @@ func NewConsumer(brokers []string, topic string, groupID string, claimer TaskCla
 		Topic:   topic,
 	})
 
-	return &Consumer{
-		reader:   reader,
-		claimer:  claimer,
-		tasks:    tasks,
-		workerID: workerID,
-		logger:   logger,
-		done:     make(chan struct{}),
-	}
+	return NewConsumerWithReader(reader, claimer, tasks, workerID, logger)
 }
 
 func NewConsumerWithReader(reader MessageReader, claimer TaskClaimer, tasks chan<- model.Task, workerID string, logger *slog.Logger) *Consumer {
