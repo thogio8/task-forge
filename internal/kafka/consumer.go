@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
 	kafkago "github.com/segmentio/kafka-go"
 	"github.com/thogio8/task-forge/internal/model"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric"
 )
 
 type MessageReader interface {
@@ -21,12 +24,14 @@ type TaskClaimer interface {
 }
 
 type Consumer struct {
-	reader   MessageReader
-	claimer  TaskClaimer
-	tasks    chan<- model.Task
-	workerID string
-	logger   *slog.Logger
-	done     chan struct{}
+	reader          MessageReader
+	claimer         TaskClaimer
+	tasks           chan<- model.Task
+	workerID        string
+	logger          *slog.Logger
+	done            chan struct{}
+	receivedCounter metric.Int64Counter
+	claimDuration   metric.Float64Histogram
 }
 
 func NewConsumer(brokers []string, topic string, groupID string, claimer TaskClaimer, tasks chan<- model.Task, workerID string, logger *slog.Logger) *Consumer {
@@ -40,13 +45,28 @@ func NewConsumer(brokers []string, topic string, groupID string, claimer TaskCla
 }
 
 func NewConsumerWithReader(reader MessageReader, claimer TaskClaimer, tasks chan<- model.Task, workerID string, logger *slog.Logger) *Consumer {
+	meter := otel.Meter("taskforge.kafka")
+
+	receivedCounter, _ := meter.Int64Counter(
+		"kafka.consumer.received.count",
+		metric.WithDescription("Number of Kafka messages received."),
+	)
+
+	claimDuration, _ := meter.Float64Histogram(
+		"kafka.consumer.claim.duration",
+		metric.WithDescription("Duration of ClaimTask after Kafka receive in seconds."),
+		metric.WithUnit("s"),
+	)
+
 	return &Consumer{
-		reader:   reader,
-		claimer:  claimer,
-		tasks:    tasks,
-		workerID: workerID,
-		logger:   logger,
-		done:     make(chan struct{}),
+		reader:          reader,
+		claimer:         claimer,
+		tasks:           tasks,
+		workerID:        workerID,
+		logger:          logger,
+		done:            make(chan struct{}),
+		receivedCounter: receivedCounter,
+		claimDuration:   claimDuration,
 	}
 }
 
@@ -81,6 +101,8 @@ func (c *Consumer) Stop() {
 }
 
 func (c *Consumer) processMessage(ctx context.Context, msg kafkago.Message) {
+	c.receivedCounter.Add(ctx, 1)
+
 	var data struct {
 		TaskID string `json:"task_id"`
 	}
@@ -103,7 +125,10 @@ func (c *Consumer) processMessage(ctx context.Context, msg kafkago.Message) {
 		return
 	}
 
+	start := time.Now()
 	task, err := c.claimer.ClaimTask(ctx, c.workerID, taskID)
+	c.claimDuration.Record(ctx, time.Since(start).Seconds())
+
 	if err != nil {
 		c.logger.Error("failed to claim task from kafka event", "worker_id", c.workerID, "task_id", taskID, "error", err)
 		return
