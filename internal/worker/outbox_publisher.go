@@ -93,7 +93,6 @@ func (o *OutboxPublisher) processCycle(ctx context.Context) {
 
 	if err != nil {
 		o.logger.Error("failed to purge outbox events", "error", err)
-		return
 	}
 }
 
