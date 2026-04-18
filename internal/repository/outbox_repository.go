@@ -78,6 +78,20 @@ func (o *OutboxRepository) MarkPublished(ctx context.Context, ids []int64) error
 	return nil
 }
 
+func (o *OutboxRepository) CountUnpublished(ctx context.Context) (int64, error) {
+	query := `SELECT COUNT(*) FROM outbox WHERE published_at IS NULL`
+
+	var count int64
+	err := o.pgxPool.QueryRow(ctx, query).Scan(&count)
+
+	if err != nil {
+		o.logger.Error("failed to count unpublished outbox events", "error", err)
+		return 0, apperror.Internal("failed to count unpublished outbox events", err)
+	}
+
+	return count, nil
+}
+
 func (o *OutboxRepository) Purge(ctx context.Context, retention time.Duration) error {
 	query := `
 		DELETE FROM outbox

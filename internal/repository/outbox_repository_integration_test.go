@@ -143,6 +143,61 @@ func TestOutbox_MarkPublished_All(t *testing.T) {
 	}
 }
 
+func TestOutbox_CountUnpublished(t *testing.T) {
+	cleanOutbox(t)
+	ctx := context.Background()
+	repo := NewOutboxRepository(testPool, testLogger)
+
+	// Insert 3 unpublished + 2 published
+	testPool.Exec(ctx, "INSERT INTO outbox (event_type, payload) VALUES ('task.created', $1)", `{"task_id":"aaa"}`)
+	testPool.Exec(ctx, "INSERT INTO outbox (event_type, payload) VALUES ('task.created', $1)", `{"task_id":"bbb"}`)
+	testPool.Exec(ctx, "INSERT INTO outbox (event_type, payload) VALUES ('task.created', $1)", `{"task_id":"ccc"}`)
+	testPool.Exec(ctx, "INSERT INTO outbox (event_type, payload, published_at) VALUES ('task.created', $1, NOW())", `{"task_id":"ddd"}`)
+	testPool.Exec(ctx, "INSERT INTO outbox (event_type, payload, published_at) VALUES ('task.created', $1, NOW())", `{"task_id":"eee"}`)
+
+	count, err := repo.CountUnpublished(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if count != 3 {
+		t.Fatalf("expected 3 unpublished events, got %d", count)
+	}
+}
+
+func TestOutbox_CountUnpublished_Empty(t *testing.T) {
+	cleanOutbox(t)
+	ctx := context.Background()
+	repo := NewOutboxRepository(testPool, testLogger)
+
+	count, err := repo.CountUnpublished(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if count != 0 {
+		t.Fatalf("expected 0 unpublished events in empty outbox, got %d", count)
+	}
+}
+
+func TestOutbox_CountUnpublished_OnlyPublished(t *testing.T) {
+	cleanOutbox(t)
+	ctx := context.Background()
+	repo := NewOutboxRepository(testPool, testLogger)
+
+	testPool.Exec(ctx, "INSERT INTO outbox (event_type, payload, published_at) VALUES ('task.created', $1, NOW())", `{"task_id":"aaa"}`)
+	testPool.Exec(ctx, "INSERT INTO outbox (event_type, payload, published_at) VALUES ('task.created', $1, NOW())", `{"task_id":"bbb"}`)
+
+	count, err := repo.CountUnpublished(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if count != 0 {
+		t.Fatalf("expected 0 unpublished (all are published), got %d", count)
+	}
+}
+
 func TestOutbox_Purge(t *testing.T) {
 	cleanOutbox(t)
 	ctx := context.Background()
