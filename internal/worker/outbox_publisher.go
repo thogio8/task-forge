@@ -25,24 +25,26 @@ type OutboxPublisher struct {
 	pollInterval time.Duration
 	batchSize    int
 	retention    time.Duration
+	workerID     string
 	logger       *slog.Logger
 	done         chan struct{}
 }
 
-func NewOutboxPublisher(repo OutboxPublisherRepository, producer OutboxProducer, pollInterval time.Duration, batchSize int, retention time.Duration, logger *slog.Logger) *OutboxPublisher {
+func NewOutboxPublisher(repo OutboxPublisherRepository, producer OutboxProducer, pollInterval time.Duration, batchSize int, retention time.Duration, workerID string, logger *slog.Logger) *OutboxPublisher {
 	return &OutboxPublisher{
 		repo:         repo,
 		producer:     producer,
 		pollInterval: pollInterval,
 		batchSize:    batchSize,
 		retention:    retention,
+		workerID:     workerID,
 		logger:       logger,
 		done:         make(chan struct{}),
 	}
 }
 
 func (o *OutboxPublisher) Run(ctx context.Context) {
-	o.logger.Info("outbox publisher started")
+	o.logger.Info("outbox publisher started", "worker_id", o.workerID)
 
 	ticker := time.NewTicker(o.pollInterval)
 	defer ticker.Stop()
@@ -53,7 +55,7 @@ func (o *OutboxPublisher) Run(ctx context.Context) {
 			o.processCycle(ctx)
 		case <-ctx.Done():
 			close(o.done)
-			o.logger.Info("outbox publisher stopped")
+			o.logger.Info("outbox publisher stopped", "worker_id", o.workerID)
 			return
 		}
 	}
@@ -65,20 +67,20 @@ func (o *OutboxPublisher) processCycle(ctx context.Context) {
 	var outboxEventsIDs []int64
 
 	if err != nil {
-		o.logger.Error("failed to retrieve unpublished outbox events", "error", err)
+		o.logger.Error("failed to retrieve unpublished outbox events", "worker_id", o.workerID, "error", err)
 		return
 	}
 
 	for _, outboxEvent := range outboxEvents {
 		taskID, extractErr := extractTaskID(outboxEvent.Payload)
 		if extractErr != nil {
-			o.logger.Warn("failed to extract task_id from outbox payload", "outbox_event_id", outboxEvent.ID, "error", extractErr)
+			o.logger.Warn("failed to extract task_id from outbox payload", "worker_id", o.workerID, "outbox_event_id", outboxEvent.ID, "error", extractErr)
 		}
 
 		err = o.producer.Publish(ctx, taskID, outboxEvent.Payload)
 
 		if err != nil {
-			o.logger.Error("failed to publish outbox event", "outbox_event_id", outboxEvent.ID, "error", err)
+			o.logger.Error("failed to publish outbox event", "worker_id", o.workerID, "outbox_event_id", outboxEvent.ID, "error", err)
 			continue
 		}
 
@@ -89,7 +91,7 @@ func (o *OutboxPublisher) processCycle(ctx context.Context) {
 		err = o.repo.MarkPublished(ctx, outboxEventsIDs)
 
 		if err != nil {
-			o.logger.Error("failed to mark outbox events as published", "error", err)
+			o.logger.Error("failed to mark outbox events as published", "worker_id", o.workerID, "error", err)
 			return
 		}
 	}
@@ -97,7 +99,7 @@ func (o *OutboxPublisher) processCycle(ctx context.Context) {
 	err = o.repo.Purge(ctx, o.retention)
 
 	if err != nil {
-		o.logger.Error("failed to purge outbox events", "error", err)
+		o.logger.Error("failed to purge outbox events", "worker_id", o.workerID, "error", err)
 	}
 }
 

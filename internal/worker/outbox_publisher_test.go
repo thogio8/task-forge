@@ -68,7 +68,7 @@ func TestOutboxPublisher_PublishesAndMarks(t *testing.T) {
 	}
 	producer := &mockProducer{}
 
-	publisher := NewOutboxPublisher(repo, producer, 50*time.Millisecond, 10, 24*time.Hour, testLogger)
+	publisher := NewOutboxPublisher(repo, producer, 50*time.Millisecond, 10, 24*time.Hour, "test-worker", testLogger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go publisher.Run(ctx)
@@ -107,7 +107,7 @@ func TestOutboxPublisher_SkipsFailedPublish(t *testing.T) {
 	// Producer fails on all publishes
 	producer := &mockProducer{err: fmt.Errorf("kafka down")}
 
-	publisher := NewOutboxPublisher(repo, producer, 50*time.Millisecond, 10, 24*time.Hour, testLogger)
+	publisher := NewOutboxPublisher(repo, producer, 50*time.Millisecond, 10, 24*time.Hour, "test-worker", testLogger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go publisher.Run(ctx)
@@ -128,7 +128,7 @@ func TestOutboxPublisher_PurgesEvenWhenEmpty(t *testing.T) {
 	}
 	producer := &mockProducer{}
 
-	publisher := NewOutboxPublisher(repo, producer, 50*time.Millisecond, 10, 24*time.Hour, testLogger)
+	publisher := NewOutboxPublisher(repo, producer, 50*time.Millisecond, 10, 24*time.Hour, "test-worker", testLogger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go publisher.Run(ctx)
@@ -147,7 +147,7 @@ func TestOutboxPublisher_StopsOnContextCancel(t *testing.T) {
 	repo := &mockOutboxRepo{}
 	producer := &mockProducer{}
 
-	publisher := NewOutboxPublisher(repo, producer, 50*time.Millisecond, 10, 24*time.Hour, testLogger)
+	publisher := NewOutboxPublisher(repo, producer, 50*time.Millisecond, 10, 24*time.Hour, "test-worker", testLogger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go publisher.Run(ctx)

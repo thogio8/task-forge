@@ -130,7 +130,7 @@ func main() {
 
 	go dispatcher.Run(ctx)
 
-	outboxPublisher := worker.NewOutboxPublisher(outboxRepo, kafkaProducer, cfg.OutboxPollInterval, cfg.OutboxBatchSize, cfg.OutboxRetention, logger)
+	outboxPublisher := worker.NewOutboxPublisher(outboxRepo, kafkaProducer, cfg.OutboxPollInterval, cfg.OutboxBatchSize, cfg.OutboxRetention, workerID, logger)
 
 	go outboxPublisher.Run(ctx)
 
