@@ -168,14 +168,20 @@ func TestOutboxPublisher_StopsOnContextCancel(t *testing.T) {
 }
 
 func TestExtractTaskID(t *testing.T) {
-	id := extractTaskID(json.RawMessage(`{"task_id":"abc-123","event_type":"task.created"}`))
+	id, err := extractTaskID(json.RawMessage(`{"task_id":"abc-123","event_type":"task.created"}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if id != "abc-123" {
 		t.Errorf("expected 'abc-123', got '%s'", id)
 	}
 }
 
 func TestExtractTaskID_InvalidJSON(t *testing.T) {
-	id := extractTaskID(json.RawMessage(`not json`))
+	id, err := extractTaskID(json.RawMessage(`not json`))
+	if err == nil {
+		t.Fatal("expected error for invalid JSON, got nil")
+	}
 	if id != "" {
 		t.Errorf("expected empty string for invalid JSON, got '%s'", id)
 	}

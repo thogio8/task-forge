@@ -70,7 +70,12 @@ func (o *OutboxPublisher) processCycle(ctx context.Context) {
 	}
 
 	for _, outboxEvent := range outboxEvents {
-		err = o.producer.Publish(ctx, extractTaskID(outboxEvent.Payload), outboxEvent.Payload)
+		taskID, extractErr := extractTaskID(outboxEvent.Payload)
+		if extractErr != nil {
+			o.logger.Warn("failed to extract task_id from outbox payload", "outbox_event_id", outboxEvent.ID, "error", extractErr)
+		}
+
+		err = o.producer.Publish(ctx, taskID, outboxEvent.Payload)
 
 		if err != nil {
 			o.logger.Error("failed to publish outbox event", "outbox_event_id", outboxEvent.ID, "error", err)
@@ -100,16 +105,14 @@ func (o *OutboxPublisher) Stop() {
 	<-o.done
 }
 
-func extractTaskID(payload json.RawMessage) string {
+func extractTaskID(payload json.RawMessage) (string, error) {
 	var data struct {
 		TaskID string `json:"task_id"`
 	}
 
-	err := json.Unmarshal(payload, &data)
-
-	if err != nil {
-		return ""
+	if err := json.Unmarshal(payload, &data); err != nil {
+		return "", err
 	}
 
-	return data.TaskID
+	return data.TaskID, nil
 }
