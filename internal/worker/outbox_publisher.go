@@ -50,47 +50,50 @@ func (o *OutboxPublisher) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			outboxEvents, err := o.repo.GetUnpublished(ctx, o.batchSize)
-
-			var outboxEventsIDs []int64
-
-			if err != nil {
-				o.logger.Error("failed to retrieve unpublished outbox events", "error", err)
-				continue
-			}
-
-			for _, outboxEvent := range outboxEvents {
-				err = o.producer.Publish(ctx, extractTaskID(outboxEvent.Payload), outboxEvent.Payload)
-
-				if err != nil {
-					o.logger.Error("failed to publish outbox event", "outbox_event_id", outboxEvent.ID, "error", err)
-					continue
-				}
-
-				outboxEventsIDs = append(outboxEventsIDs, outboxEvent.ID)
-			}
-
-			if len(outboxEventsIDs) > 0 {
-				err = o.repo.MarkPublished(ctx, outboxEventsIDs)
-
-				if err != nil {
-					o.logger.Error("failed to mark outbox events as published", "error", err)
-					continue
-				}
-			}
-
-			err = o.repo.Purge(ctx, o.retention)
-
-			if err != nil {
-				o.logger.Error("failed to purge outbox events", "error", err)
-				continue
-			}
-
+			o.processCycle(ctx)
 		case <-ctx.Done():
 			close(o.done)
 			o.logger.Info("outbox publisher stopped")
 			return
 		}
+	}
+}
+
+func (o *OutboxPublisher) processCycle(ctx context.Context) {
+	outboxEvents, err := o.repo.GetUnpublished(ctx, o.batchSize)
+
+	var outboxEventsIDs []int64
+
+	if err != nil {
+		o.logger.Error("failed to retrieve unpublished outbox events", "error", err)
+		return
+	}
+
+	for _, outboxEvent := range outboxEvents {
+		err = o.producer.Publish(ctx, extractTaskID(outboxEvent.Payload), outboxEvent.Payload)
+
+		if err != nil {
+			o.logger.Error("failed to publish outbox event", "outbox_event_id", outboxEvent.ID, "error", err)
+			continue
+		}
+
+		outboxEventsIDs = append(outboxEventsIDs, outboxEvent.ID)
+	}
+
+	if len(outboxEventsIDs) > 0 {
+		err = o.repo.MarkPublished(ctx, outboxEventsIDs)
+
+		if err != nil {
+			o.logger.Error("failed to mark outbox events as published", "error", err)
+			return
+		}
+	}
+
+	err = o.repo.Purge(ctx, o.retention)
+
+	if err != nil {
+		o.logger.Error("failed to purge outbox events", "error", err)
+		return
 	}
 }
 
