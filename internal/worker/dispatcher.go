@@ -23,12 +23,18 @@ type Dispatcher struct {
 	workerID       string
 	logger         *slog.Logger
 	done           chan struct{}
+	cycleCounter   metric.Int64Counter
 	claimedCounter metric.Int64Counter
 	pollDuration   metric.Float64Histogram
 }
 
 func NewDispatcher(repo DispatcherRepository, tasks chan<- model.Task, pollInterval time.Duration, batchSize int, workerID string, logger *slog.Logger) *Dispatcher {
 	meter := otel.Meter("taskforge.dispatcher")
+
+	cycleCounter, _ := meter.Int64Counter(
+		"dispatcher.cycle.count",
+		metric.WithDescription("Number of dispatcher polling cycles executed."),
+	)
 
 	claimedCounter, _ := meter.Int64Counter(
 		"dispatcher.claimed.count",
@@ -50,6 +56,7 @@ func NewDispatcher(repo DispatcherRepository, tasks chan<- model.Task, pollInter
 		workerID:       workerID,
 		logger:         logger,
 		done:           make(chan struct{}),
+		cycleCounter:   cycleCounter,
 		claimedCounter: claimedCounter,
 		pollDuration:   pollDuration,
 	}
@@ -64,6 +71,7 @@ func (d *Dispatcher) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
+			d.cycleCounter.Add(ctx, 1)
 			start := time.Now()
 			tasks, err := d.repo.ClaimTasks(ctx, d.workerID, d.batchSize)
 			d.pollDuration.Record(ctx, time.Since(start).Seconds())
