@@ -38,6 +38,18 @@ func (m *mockOutboxRepo) Purge(_ context.Context, _ time.Duration) error {
 	return nil
 }
 
+func (m *mockOutboxRepo) CountUnpublished(_ context.Context) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var count int64
+	for _, e := range m.events {
+		if e.PublishedAt == nil {
+			count++
+		}
+	}
+	return count, nil
+}
+
 type mockProducer struct {
 	messages []publishedMessage
 	mu       sync.Mutex

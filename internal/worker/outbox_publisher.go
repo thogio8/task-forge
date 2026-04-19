@@ -7,12 +7,15 @@ import (
 	"time"
 
 	"github.com/thogio8/task-forge/internal/model"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric"
 )
 
 type OutboxPublisherRepository interface {
 	GetUnpublished(ctx context.Context, limit int) ([]model.OutboxEvent, error)
 	MarkPublished(ctx context.Context, ids []int64) error
 	Purge(ctx context.Context, retention time.Duration) error
+	CountUnpublished(ctx context.Context) (int64, error)
 }
 
 type OutboxProducer interface {
@@ -20,26 +23,57 @@ type OutboxProducer interface {
 }
 
 type OutboxPublisher struct {
-	repo         OutboxPublisherRepository
-	producer     OutboxProducer
-	pollInterval time.Duration
-	batchSize    int
-	retention    time.Duration
-	workerID     string
-	logger       *slog.Logger
-	done         chan struct{}
+	repo             OutboxPublisherRepository
+	producer         OutboxProducer
+	pollInterval     time.Duration
+	batchSize        int
+	retention        time.Duration
+	workerID         string
+	logger           *slog.Logger
+	done             chan struct{}
+	publishedCounter metric.Int64Counter
+	publishDuration  metric.Float64Histogram
 }
 
 func NewOutboxPublisher(repo OutboxPublisherRepository, producer OutboxProducer, pollInterval time.Duration, batchSize int, retention time.Duration, workerID string, logger *slog.Logger) *OutboxPublisher {
+	meter := otel.Meter("taskforge.outbox")
+
+	_, _ = meter.Int64ObservableGauge(
+		"outbox.pending",
+		metric.WithDescription("Number of unpublished events in the outbox"),
+		metric.WithInt64Callback(func(ctx context.Context, o metric.Int64Observer) error {
+			count, err := repo.CountUnpublished(ctx)
+			if err != nil {
+				logger.Warn("failed to observe outbox.pending", "error", err)
+				return nil
+			}
+			o.Observe(count)
+			return nil
+		}),
+	)
+
+	publishedCounter, _ := meter.Int64Counter(
+		"outbox.published.count",
+		metric.WithDescription("Number of outbox events published to Kafka"),
+	)
+
+	publishDuration, _ := meter.Float64Histogram(
+		"outbox.publish.duration",
+		metric.WithDescription("Duration of event publishing to Kafka"),
+		metric.WithUnit("s"),
+	)
+
 	return &OutboxPublisher{
-		repo:         repo,
-		producer:     producer,
-		pollInterval: pollInterval,
-		batchSize:    batchSize,
-		retention:    retention,
-		workerID:     workerID,
-		logger:       logger,
-		done:         make(chan struct{}),
+		repo:             repo,
+		producer:         producer,
+		pollInterval:     pollInterval,
+		batchSize:        batchSize,
+		retention:        retention,
+		workerID:         workerID,
+		logger:           logger,
+		done:             make(chan struct{}),
+		publishedCounter: publishedCounter,
+		publishDuration:  publishDuration,
 	}
 }
 
@@ -77,12 +111,16 @@ func (o *OutboxPublisher) processCycle(ctx context.Context) {
 			o.logger.Warn("failed to extract task_id from outbox payload", "worker_id", o.workerID, "outbox_event_id", outboxEvent.ID, "error", extractErr)
 		}
 
+		start := time.Now()
 		err = o.producer.Publish(ctx, taskID, outboxEvent.Payload)
+		o.publishDuration.Record(ctx, time.Since(start).Seconds())
 
 		if err != nil {
 			o.logger.Error("failed to publish outbox event", "worker_id", o.workerID, "outbox_event_id", outboxEvent.ID, "error", err)
 			continue
 		}
+
+		o.publishedCounter.Add(ctx, 1)
 
 		outboxEventsIDs = append(outboxEventsIDs, outboxEvent.ID)
 	}
