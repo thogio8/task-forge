@@ -33,6 +33,7 @@ type OutboxPublisher struct {
 	logger           *slog.Logger
 	done             chan struct{}
 	publishedCounter metric.Int64Counter
+	errorsCounter    metric.Int64Counter
 	publishDuration  metric.Float64Histogram
 }
 
@@ -58,6 +59,11 @@ func NewOutboxPublisher(repo OutboxPublisherRepository, producer OutboxProducer,
 		metric.WithDescription("Number of outbox events published to Kafka"),
 	)
 
+	errorsCounter, _ := meter.Int64Counter(
+		"outbox.publish.errors.count",
+		metric.WithDescription("Number of failed outbox publish attempts to Kafka"),
+	)
+
 	publishDuration, _ := meter.Float64Histogram(
 		"outbox.publish.duration",
 		metric.WithDescription("Duration of event publishing to Kafka"),
@@ -75,6 +81,7 @@ func NewOutboxPublisher(repo OutboxPublisherRepository, producer OutboxProducer,
 		logger:           logger,
 		done:             make(chan struct{}),
 		publishedCounter: publishedCounter,
+		errorsCounter:    errorsCounter,
 		publishDuration:  publishDuration,
 	}
 }
@@ -119,6 +126,7 @@ func (o *OutboxPublisher) processCycle(ctx context.Context) {
 
 		if err != nil {
 			o.logger.Error("failed to publish outbox event", "worker_id", o.workerID, "outbox_event_id", outboxEvent.ID, "error", err)
+			o.errorsCounter.Add(ctx, 1)
 			continue
 		}
 
