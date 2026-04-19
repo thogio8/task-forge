@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	kafkago "github.com/segmentio/kafka-go"
 	"github.com/thogio8/task-forge/internal/model"
+	"github.com/thogio8/task-forge/internal/telemetry"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
 )
@@ -56,6 +57,7 @@ func NewConsumerWithReader(reader MessageReader, claimer TaskClaimer, tasks chan
 		"kafka.consumer.claim.duration",
 		metric.WithDescription("Duration of ClaimTask after Kafka receive in seconds."),
 		metric.WithUnit("s"),
+		metric.WithExplicitBucketBoundaries(telemetry.LatencyBuckets...),
 	)
 
 	return &Consumer{

@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/thogio8/task-forge/internal/model"
+	"github.com/thogio8/task-forge/internal/telemetry"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -45,6 +46,7 @@ func NewExecutor(repo TaskRepository, taskTimeout time.Duration, logger *slog.Lo
 		"task.execution.duration",
 		metric.WithDescription("Execution duration in seconds."),
 		metric.WithUnit("s"),
+		metric.WithExplicitBucketBoundaries(telemetry.LatencyBuckets...),
 	)
 
 	completedCounter, _ := meter.Int64Counter(

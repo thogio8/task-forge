@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/thogio8/task-forge/internal/model"
+	"github.com/thogio8/task-forge/internal/telemetry"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
 )
@@ -38,6 +39,7 @@ func NewDispatcher(repo DispatcherRepository, tasks chan<- model.Task, pollInter
 		"dispatcher.poll.duration",
 		metric.WithDescription("Duration of dispatcher DB poll in seconds."),
 		metric.WithUnit("s"),
+		metric.WithExplicitBucketBoundaries(telemetry.LatencyBuckets...),
 	)
 
 	return &Dispatcher{

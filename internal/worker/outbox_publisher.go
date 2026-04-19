@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/thogio8/task-forge/internal/model"
+	"github.com/thogio8/task-forge/internal/telemetry"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
 )
@@ -61,6 +62,7 @@ func NewOutboxPublisher(repo OutboxPublisherRepository, producer OutboxProducer,
 		"outbox.publish.duration",
 		metric.WithDescription("Duration of event publishing to Kafka"),
 		metric.WithUnit("s"),
+		metric.WithExplicitBucketBoundaries(telemetry.LatencyBuckets...),
 	)
 
 	return &OutboxPublisher{

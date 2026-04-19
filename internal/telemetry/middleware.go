@@ -21,6 +21,7 @@ func HTTPMetrics(meter metric.Meter) func(next http.Handler) http.Handler {
 		"http.server.request.duration",
 		metric.WithDescription("HTTP request duration in seconds"),
 		metric.WithUnit("s"),
+		metric.WithExplicitBucketBoundaries(LatencyBuckets...),
 	)
 
 	requestCount, _ := meter.Int64Counter(
