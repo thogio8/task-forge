@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"os"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -22,9 +23,15 @@ type Telemetry struct {
 }
 
 func Setup(ctx context.Context, cfg Config) (*Telemetry, error) {
+	instanceID, err := os.Hostname()
+	if err != nil {
+		instanceID = "unknown"
+	}
+
 	res, err := resource.New(ctx,
 		resource.WithAttributes(
 			semconv.ServiceNameKey.String(cfg.ServiceName),
+			semconv.ServiceInstanceIDKey.String(instanceID),
 		),
 	)
 
