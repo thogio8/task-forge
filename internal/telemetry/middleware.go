@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 )
@@ -42,9 +43,14 @@ func HTTPMetrics(meter metric.Meter) func(next http.Handler) http.Handler {
 			next.ServeHTTP(sw, r)
 			activeRequests.Add(r.Context(), -1)
 
+			route := chi.RouteContext(r.Context()).RoutePattern()
+			if route == "" {
+				route = "unmatched"
+			}
+
 			attrs := []attribute.KeyValue{
 				attribute.String("http.method", r.Method),
-				attribute.String("http.route", r.URL.Path),
+				attribute.String("http.route", route),
 				attribute.String("http.status_code", strconv.Itoa(sw.status)),
 			}
 
