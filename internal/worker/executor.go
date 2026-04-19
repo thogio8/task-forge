@@ -117,7 +117,7 @@ func (e *Executor) Execute(ctx context.Context, task model.Task) {
 			e.logger.Error("failed to fail task with unknown type", "task_id", task.ID, "error", failErr)
 		}
 		e.failedCounter.Add(ctx, 1, metric.WithAttributes(
-			attribute.String("task_type", payload.Type),
+			attribute.String("task_type", "unknown"),
 			attribute.String("error_type", "validation"),
 		))
 		return
