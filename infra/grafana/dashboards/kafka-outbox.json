@@ -116,26 +116,30 @@
     {
       "id": 4,
       "type": "timeseries",
-      "title": "Dispatcher Claims (fallback polling)",
-      "description": "Tasks claimed via DB polling — non-zero means Kafka fallback kicked in",
+      "title": "Dispatcher Activity",
+      "description": "Polling cycles executed vs tasks actually claimed. Gap between the two indicates empty polls.",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
+          "expr": "sum(rate(taskforge_dispatcher_cycle_count_total[1m]))",
+          "legendFormat": "cycles/s",
+          "refId": "A"
+        },
+        {
           "expr": "sum(rate(taskforge_dispatcher_claimed_count_total[1m]))",
           "legendFormat": "claims/s",
-          "refId": "A"
+          "refId": "B"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "ops",
           "custom": {
-            "drawStyle": "bars",
-            "lineWidth": 1,
-            "fillOpacity": 30
-          },
-          "color": { "mode": "fixed", "fixedColor": "orange" }
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 15
+          }
         }
       }
     },
@@ -243,6 +247,39 @@
         "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "center"
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Outbox Publish Errors",
+      "description": "Rate of failed Kafka publish attempts. Any sustained non-zero value indicates a Kafka connectivity or broker issue.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 30 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(taskforge_outbox_publish_errors_count_total[1m]))",
+          "legendFormat": "errors/s",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 25
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 0.01 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        }
       }
     }
   ]
