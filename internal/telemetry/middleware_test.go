@@ -11,7 +11,28 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
+
+// withTestTracerProvider installs a fresh TracerProvider backed by an
+// in-memory SpanRecorder for the duration of the test, restoring the previous
+// provider afterwards. The returned recorder can be queried with .Ended().
+func withTestTracerProvider(t *testing.T) *tracetest.SpanRecorder {
+	t.Helper()
+
+	recorder := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+
+	prev := otel.GetTracerProvider()
+	otel.SetTracerProvider(tp)
+	t.Cleanup(func() {
+		otel.SetTracerProvider(prev)
+		_ = tp.Shutdown(context.Background())
+	})
+
+	return recorder
+}
 
 // withTestMeterProvider installs a fresh MeterProvider with a manual reader
 // for the duration of the test, restoring the previous provider afterwards.
@@ -53,9 +74,9 @@ func hasAttribute(set attribute.Set, key, value string) bool {
 	return v.AsString() == value
 }
 
-func TestHTTPMetricsMiddleware_PassesThrough(t *testing.T) {
+func TestHTTPMiddleware_PassesThrough(t *testing.T) {
 	meter := otel.Meter("taskforge.http.test")
-	mw := HTTPMetrics(meter)
+	mw := HTTPMiddleware(meter)
 
 	called := false
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -77,9 +98,9 @@ func TestHTTPMetricsMiddleware_PassesThrough(t *testing.T) {
 	}
 }
 
-func TestHTTPMetricsMiddleware_CapturesStatusCode(t *testing.T) {
+func TestHTTPMiddleware_CapturesStatusCode(t *testing.T) {
 	meter := otel.Meter("taskforge.http.test")
-	mw := HTTPMetrics(meter)
+	mw := HTTPMiddleware(meter)
 
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
@@ -95,9 +116,9 @@ func TestHTTPMetricsMiddleware_CapturesStatusCode(t *testing.T) {
 	}
 }
 
-func TestHTTPMetricsMiddleware_DefaultStatusOK(t *testing.T) {
+func TestHTTPMiddleware_DefaultStatusOK(t *testing.T) {
 	meter := otel.Meter("taskforge.http.test")
-	mw := HTTPMetrics(meter)
+	mw := HTTPMiddleware(meter)
 
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
@@ -134,15 +155,15 @@ func TestStatusWriter_DefaultStatus(t *testing.T) {
 	}
 }
 
-// TestHTTPMetricsMiddleware_RecordsCounterAndHistogram verifies that the
+// TestHTTPMiddleware_RecordsCounterAndHistogram verifies that the
 // middleware actually emits the expected counter and histogram with the
 // proper attributes when wired behind a chi router.
-func TestHTTPMetricsMiddleware_RecordsCounterAndHistogram(t *testing.T) {
+func TestHTTPMiddleware_RecordsCounterAndHistogram(t *testing.T) {
 	reader := withTestMeterProvider(t)
 	meter := otel.Meter("taskforge.http")
 
 	router := chi.NewRouter()
-	router.Use(HTTPMetrics(meter))
+	router.Use(HTTPMiddleware(meter))
 	router.Get("/tasks/{id}", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -199,14 +220,14 @@ func TestHTTPMetricsMiddleware_RecordsCounterAndHistogram(t *testing.T) {
 	}
 }
 
-// TestHTTPMetricsMiddleware_UnmatchedRouteFallback verifies that the
+// TestHTTPMiddleware_UnmatchedRouteFallback verifies that the
 // middleware labels requests with `unmatched` when no chi route pattern is
 // resolved (e.g. unrouted requests, raw http.Handler usage).
-func TestHTTPMetricsMiddleware_UnmatchedRouteFallback(t *testing.T) {
+func TestHTTPMiddleware_UnmatchedRouteFallback(t *testing.T) {
 	reader := withTestMeterProvider(t)
 	meter := otel.Meter("taskforge.http")
 
-	mw := HTTPMetrics(meter)
+	mw := HTTPMiddleware(meter)
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
@@ -231,14 +252,14 @@ func TestHTTPMetricsMiddleware_UnmatchedRouteFallback(t *testing.T) {
 	}
 }
 
-// TestHTTPMetricsMiddleware_ActiveRequestsReturnsToZero verifies that the
+// TestHTTPMiddleware_ActiveRequestsReturnsToZero verifies that the
 // in-flight gauge is correctly decremented after the request completes.
-func TestHTTPMetricsMiddleware_ActiveRequestsReturnsToZero(t *testing.T) {
+func TestHTTPMiddleware_ActiveRequestsReturnsToZero(t *testing.T) {
 	reader := withTestMeterProvider(t)
 	meter := otel.Meter("taskforge.http")
 
 	router := chi.NewRouter()
-	router.Use(HTTPMetrics(meter))
+	router.Use(HTTPMiddleware(meter))
 	router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -266,5 +287,82 @@ func TestHTTPMetricsMiddleware_ActiveRequestsReturnsToZero(t *testing.T) {
 	}
 	if total != 0 {
 		t.Errorf("active_requests total = %d after all requests done, want 0", total)
+	}
+}
+
+// TestHTTPMiddleware_OpensSpanWithRoute verifies that the middleware opens a
+// server-side span with the chi RoutePattern (not URL.Path) and the standard
+// HTTP semantic-convention attributes.
+func TestHTTPMiddleware_OpensSpanWithRoute(t *testing.T) {
+	recorder := withTestTracerProvider(t)
+	meter := otel.Meter("taskforge.http")
+
+	router := chi.NewRouter()
+	router.Use(HTTPMiddleware(meter))
+	router.Get("/tasks/{id}", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/tasks/abc-123", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	spans := recorder.Ended()
+	if len(spans) != 1 {
+		t.Fatalf("expected 1 span, got %d", len(spans))
+	}
+
+	span := spans[0]
+	if span.Name() != "HTTP GET /tasks/{id}" {
+		t.Errorf("span name = %q, want %q", span.Name(), "HTTP GET /tasks/{id}")
+	}
+
+	attrs := span.Attributes()
+	want := map[string]string{
+		"http.request.method":      "GET",
+		"http.route":               "/tasks/{id}",
+		"http.response.status_code": "200",
+	}
+	for key, expected := range want {
+		found := false
+		for _, kv := range attrs {
+			if string(kv.Key) != key {
+				continue
+			}
+			got := kv.Value.Emit()
+			if got != expected {
+				t.Errorf("attr %s = %q, want %q", key, got, expected)
+			}
+			found = true
+			break
+		}
+		if !found {
+			t.Errorf("missing span attribute %q", key)
+		}
+	}
+}
+
+// TestHTTPMiddleware_SpanErrorOnServerError verifies that the span status is
+// set to Error when the handler returns 5xx.
+func TestHTTPMiddleware_SpanErrorOnServerError(t *testing.T) {
+	recorder := withTestTracerProvider(t)
+	meter := otel.Meter("taskforge.http")
+
+	router := chi.NewRouter()
+	router.Use(HTTPMiddleware(meter))
+	router.Get("/boom", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/boom", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	spans := recorder.Ended()
+	if len(spans) != 1 {
+		t.Fatalf("expected 1 span, got %d", len(spans))
+	}
+	if code := spans[0].Status().Code.String(); code != "Error" {
+		t.Errorf("span status = %q, want Error (5xx should mark span as error)", code)
 	}
 }

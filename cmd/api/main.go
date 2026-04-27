@@ -150,7 +150,7 @@ func main() {
 
 	router := chi.NewRouter()
 	router.Use(middleware.Logger)
-	router.Use(telemetry.HTTPMetrics(otel.Meter("taskforge.http")))
+	router.Use(telemetry.HTTPMiddleware(otel.Meter("taskforge.http")))
 
 	router.Get("/health", handler.HealthCheck)
 	router.Post("/tasks", taskHandler.CreateTask)
