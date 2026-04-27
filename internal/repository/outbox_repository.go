@@ -8,6 +8,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/thogio8/task-forge/internal/apperror"
 	"github.com/thogio8/task-forge/internal/model"
+	"github.com/thogio8/task-forge/internal/telemetry"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 type OutboxRepository struct {
@@ -19,7 +21,13 @@ func NewOutboxRepository(pool *pgxpool.Pool, logger *slog.Logger) *OutboxReposit
 	return &OutboxRepository{pgxPool: pool, logger: logger}
 }
 
-func (o *OutboxRepository) GetUnpublished(ctx context.Context, limit int) ([]model.OutboxEvent, error) {
+func (o *OutboxRepository) GetUnpublished(ctx context.Context, limit int) (outboxEvents []model.OutboxEvent, err error) {
+	ctx, span := telemetry.StartSpan(ctx, "db.outbox.get_unpublished",
+		dbSystemPostgres,
+		attribute.Int("batch.size", limit),
+	)
+	defer telemetry.EndSpanWithError(span, &err)
+
 	query := `
 		SELECT id, event_type, payload, created_at, published_at, trace_context
 		FROM outbox
@@ -36,28 +44,33 @@ func (o *OutboxRepository) GetUnpublished(ctx context.Context, limit int) ([]mod
 	}
 	defer rows.Close()
 
-	var outboxEvents []model.OutboxEvent
-
 	for rows.Next() {
-		outboxEvent, err := scanOutbox(rows)
+		outboxEvent, scanErr := scanOutbox(rows)
 
-		if err != nil {
-			o.logger.Error("failed to scan outbox event row", "error", err)
-			return nil, apperror.Internal("failed to scan outbox event row", err)
+		if scanErr != nil {
+			o.logger.Error("failed to scan outbox event row", "error", scanErr)
+			return nil, apperror.Internal("failed to scan outbox event row", scanErr)
 		}
 		outboxEvents = append(outboxEvents, outboxEvent)
 	}
 
-	if err := rows.Err(); err != nil {
+	if err = rows.Err(); err != nil {
 		o.logger.Error("failed to iterate outbox event rows", "error", err)
 		return nil, apperror.Internal("failed to iterate outbox event rows", err)
 	}
 
 	o.logger.Debug("unpublished outbox events fetched", "count", len(outboxEvents))
+	span.SetAttributes(attribute.Int("fetched.count", len(outboxEvents)))
 	return outboxEvents, nil
 }
 
-func (o *OutboxRepository) MarkPublished(ctx context.Context, ids []int64) error {
+func (o *OutboxRepository) MarkPublished(ctx context.Context, ids []int64) (err error) {
+	ctx, span := telemetry.StartSpan(ctx, "db.outbox.mark_published",
+		dbSystemPostgres,
+		attribute.Int("count", len(ids)),
+	)
+	defer telemetry.EndSpanWithError(span, &err)
+
 	query := `
 		UPDATE outbox
 		SET published_at = NOW()

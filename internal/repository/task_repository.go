@@ -13,7 +13,10 @@ import (
 	"github.com/thogio8/task-forge/internal/apperror"
 	"github.com/thogio8/task-forge/internal/model"
 	"github.com/thogio8/task-forge/internal/telemetry"
+	"go.opentelemetry.io/otel/attribute"
 )
+
+var dbSystemPostgres = attribute.String("db.system", "postgresql")
 
 type TaskRepository struct {
 	pgxPool *pgxpool.Pool
@@ -28,7 +31,13 @@ func NewTaskRepository(pool *pgxpool.Pool, logger *slog.Logger) *TaskRepository 
 	return &TaskRepository{pgxPool: pool, logger: logger}
 }
 
-func (t *TaskRepository) Create(ctx context.Context, task *model.Task) (bool, error) {
+func (t *TaskRepository) Create(ctx context.Context, task *model.Task) (created bool, err error) {
+	ctx, span := telemetry.StartSpan(ctx, "db.task.create",
+		dbSystemPostgres,
+		attribute.String("db.operation", "INSERT"),
+	)
+	defer telemetry.EndSpanWithError(span, &err)
+
 	tx, err := t.pgxPool.Begin(ctx)
 
 	if err != nil {
@@ -116,7 +125,10 @@ func (t *TaskRepository) Create(ctx context.Context, task *model.Task) (bool, er
 	return true, nil
 }
 
-func (t *TaskRepository) GetAll(ctx context.Context) ([]model.Task, error) {
+func (t *TaskRepository) GetAll(ctx context.Context) (tasks []model.Task, err error) {
+	ctx, span := telemetry.StartSpan(ctx, "db.task.get_all", dbSystemPostgres)
+	defer telemetry.EndSpanWithError(span, &err)
+
 	query := `
 		SELECT id, status, payload, created_at, updated_at, locked_by, locked_at,
     	attempt_count, max_retries, last_error, next_retry_at, idempotency_key
@@ -130,8 +142,6 @@ func (t *TaskRepository) GetAll(ctx context.Context) ([]model.Task, error) {
 		return nil, apperror.Internal("failed to query tasks", err)
 	}
 	defer rows.Close()
-
-	var tasks []model.Task
 
 	for rows.Next() {
 		task, err := scanTask(rows)
@@ -149,10 +159,17 @@ func (t *TaskRepository) GetAll(ctx context.Context) ([]model.Task, error) {
 	}
 
 	t.logger.Info("all tasks fetched", "count", len(tasks))
+	span.SetAttributes(attribute.Int("task.count", len(tasks)))
 	return tasks, nil
 }
 
-func (t *TaskRepository) GetById(ctx context.Context, id uuid.UUID) (model.Task, error) {
+func (t *TaskRepository) GetById(ctx context.Context, id uuid.UUID) (task model.Task, err error) {
+	ctx, span := telemetry.StartSpan(ctx, "db.task.get_by_id",
+		dbSystemPostgres,
+		attribute.String("task.id", id.String()),
+	)
+	defer telemetry.EndSpanWithError(span, &err)
+
 	query := `
 		SELECT id, status, payload, created_at, updated_at, locked_by, locked_at,
     	attempt_count, max_retries, last_error, next_retry_at, idempotency_key
@@ -162,7 +179,7 @@ func (t *TaskRepository) GetById(ctx context.Context, id uuid.UUID) (model.Task,
 
 	row := t.pgxPool.QueryRow(ctx, query, id)
 
-	task, err := scanTask(row)
+	task, err = scanTask(row)
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -178,7 +195,14 @@ func (t *TaskRepository) GetById(ctx context.Context, id uuid.UUID) (model.Task,
 	return task, nil
 }
 
-func (t *TaskRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status string) error {
+func (t *TaskRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status string) (err error) {
+	ctx, span := telemetry.StartSpan(ctx, "db.task.update_status",
+		dbSystemPostgres,
+		attribute.String("task.id", id.String()),
+		attribute.String("task.status", status),
+	)
+	defer telemetry.EndSpanWithError(span, &err)
+
 	query := `UPDATE tasks SET status = $1 WHERE id = $2`
 
 	results, err := t.pgxPool.Exec(ctx, query, status, id)
@@ -197,7 +221,14 @@ func (t *TaskRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status 
 	return nil
 }
 
-func (t *TaskRepository) ClaimTasks(ctx context.Context, workerID string, limit int) ([]model.Task, error) {
+func (t *TaskRepository) ClaimTasks(ctx context.Context, workerID string, limit int) (tasks []model.Task, err error) {
+	ctx, span := telemetry.StartSpan(ctx, "db.task.claim_batch",
+		dbSystemPostgres,
+		attribute.String("worker.id", workerID),
+		attribute.Int("claim.batch_size", limit),
+	)
+	defer telemetry.EndSpanWithError(span, &err)
+
 	tx, err := t.pgxPool.Begin(ctx)
 
 	if err != nil {
@@ -226,15 +257,14 @@ func (t *TaskRepository) ClaimTasks(ctx context.Context, workerID string, limit 
 	}
 	defer rows.Close()
 
-	var tasks []model.Task
 	var ids []uuid.UUID
 
 	for rows.Next() {
-		task, err := scanTask(rows)
+		task, scanErr := scanTask(rows)
 
-		if err != nil {
-			t.logger.Error("failed to scan claimable task", "error", err)
-			return nil, apperror.Internal("failed to scan claimable task", err)
+		if scanErr != nil {
+			t.logger.Error("failed to scan claimable task", "error", scanErr)
+			return nil, apperror.Internal("failed to scan claimable task", scanErr)
 		}
 
 		tasks = append(tasks, task)
@@ -266,10 +296,18 @@ func (t *TaskRepository) ClaimTasks(ctx context.Context, workerID string, limit 
 		return nil, apperror.Internal("failed to commit claim transaction", err)
 	}
 
+	span.SetAttributes(attribute.Int("claim.actual_count", len(tasks)))
 	return tasks, nil
 }
 
-func (t *TaskRepository) ClaimTask(ctx context.Context, workerID string, taskID uuid.UUID) (*model.Task, error) {
+func (t *TaskRepository) ClaimTask(ctx context.Context, workerID string, taskID uuid.UUID) (task *model.Task, err error) {
+	ctx, span := telemetry.StartSpan(ctx, "db.task.claim",
+		dbSystemPostgres,
+		attribute.String("worker.id", workerID),
+		attribute.String("task.id", taskID.String()),
+	)
+	defer telemetry.EndSpanWithError(span, &err)
+
 	query := `
 		UPDATE tasks
 		SET status = 'running', locked_by = $1, locked_at = NOW()
@@ -282,21 +320,28 @@ func (t *TaskRepository) ClaimTask(ctx context.Context, workerID string, taskID 
 	`
 
 	row := t.pgxPool.QueryRow(ctx, query, workerID, taskID)
-	task, err := scanTask(row)
+	scanned, scanErr := scanTask(row)
 
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+	if scanErr != nil {
+		if errors.Is(scanErr, pgx.ErrNoRows) {
 			return nil, nil
 		}
-		t.logger.Error("failed to claim task", "task_id", taskID, "error", err)
-		return nil, apperror.Internal("failed to claim task", err)
+		t.logger.Error("failed to claim task", "task_id", taskID, "error", scanErr)
+		err = apperror.Internal("failed to claim task", scanErr)
+		return nil, err
 	}
 
 	t.logger.Info("task claimed via event", "task_id", taskID, "worker_id", workerID)
-	return &task, nil
+	return &scanned, nil
 }
 
-func (t *TaskRepository) CompleteTask(ctx context.Context, id uuid.UUID) error {
+func (t *TaskRepository) CompleteTask(ctx context.Context, id uuid.UUID) (err error) {
+	ctx, span := telemetry.StartSpan(ctx, "db.task.complete",
+		dbSystemPostgres,
+		attribute.String("task.id", id.String()),
+	)
+	defer telemetry.EndSpanWithError(span, &err)
+
 	query := "UPDATE tasks SET status = 'completed', locked_by = NULL, locked_at = NULL WHERE id = $1"
 
 	results, err := t.pgxPool.Exec(ctx, query, id)
@@ -314,7 +359,15 @@ func (t *TaskRepository) CompleteTask(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-func (t *TaskRepository) FailTask(ctx context.Context, id uuid.UUID, errMsg string, nextRetryAt *time.Time) error {
+func (t *TaskRepository) FailTask(ctx context.Context, id uuid.UUID, errMsg string, nextRetryAt *time.Time) (err error) {
+	willRetry := nextRetryAt != nil
+	ctx, span := telemetry.StartSpan(ctx, "db.task.fail",
+		dbSystemPostgres,
+		attribute.String("task.id", id.String()),
+		attribute.Bool("task.will_retry", willRetry),
+	)
+	defer telemetry.EndSpanWithError(span, &err)
+
 	if nextRetryAt != nil {
 		query := `
 			UPDATE tasks

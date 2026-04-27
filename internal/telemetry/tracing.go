@@ -19,13 +19,19 @@ func StartSpan(ctx context.Context, name string, attrs ...attribute.KeyValue) (c
 	return otel.Tracer(tracerName).Start(ctx, name, trace.WithAttributes(attrs...))
 }
 
-// EndSpanWithError ends a span and, if err is non-nil, records it and sets the
-// span status to Error. Designed for `defer telemetry.EndSpanWithError(span, err)`
-// patterns where err is a named return value.
-func EndSpanWithError(span trace.Span, err error) {
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+// EndSpanWithError ends a span and, if *errPtr is non-nil, records it and
+// sets the span status to Error. Takes a pointer to capture the final value
+// of a named return value via defer:
+//
+//	defer telemetry.EndSpanWithError(span, &err)
+//
+// Passing the address (not the value) is required because Go evaluates defer
+// arguments at registration time; the pointer lets the helper read the latest
+// error when the function actually returns.
+func EndSpanWithError(span trace.Span, errPtr *error) {
+	if errPtr != nil && *errPtr != nil {
+		span.RecordError(*errPtr)
+		span.SetStatus(codes.Error, (*errPtr).Error())
 	}
 	span.End()
 }
