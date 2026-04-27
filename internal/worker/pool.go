@@ -13,8 +13,8 @@ import (
 
 type Pool struct {
 	workerCount   int
-	processFunc   func(model.Task)
-	tasks         chan model.Task
+	processFunc   func(context.Context, model.Task)
+	tasks         chan model.TaskEnvelope
 	wg            sync.WaitGroup
 	logger        *slog.Logger
 	processed     atomic.Int64
@@ -22,8 +22,8 @@ type Pool struct {
 	activeWorkers metric.Int64UpDownCounter
 }
 
-func NewPool(workerCount int, processFunc func(model.Task), logger *slog.Logger) *Pool {
-	bufferedChannel := make(chan model.Task, workerCount*2)
+func NewPool(workerCount int, processFunc func(context.Context, model.Task), logger *slog.Logger) *Pool {
+	bufferedChannel := make(chan model.TaskEnvelope, workerCount*2)
 
 	meter := otel.Meter("taskforge.pool")
 
@@ -56,11 +56,11 @@ func (p *Pool) Start() {
 	for i := range p.workerCount {
 		go func(_ int) {
 			defer p.wg.Done()
-			for task := range p.tasks {
+			for envelope := range p.tasks {
 				p.active.Add(1)
-				p.activeWorkers.Add(context.Background(), 1)
-				p.processFunc(task)
-				p.activeWorkers.Add(context.Background(), -1)
+				p.activeWorkers.Add(envelope.Ctx, 1)
+				p.processFunc(envelope.Ctx, envelope.Task)
+				p.activeWorkers.Add(envelope.Ctx, -1)
 				p.active.Add(-1)
 				p.processed.Add(1)
 			}
@@ -68,8 +68,8 @@ func (p *Pool) Start() {
 	}
 }
 
-func (p *Pool) Submit(task model.Task) {
-	p.tasks <- task
+func (p *Pool) Submit(ctx context.Context, task model.Task) {
+	p.tasks <- model.TaskEnvelope{Task: task, Ctx: ctx}
 }
 
 func (p *Pool) Stop() {
@@ -77,7 +77,7 @@ func (p *Pool) Stop() {
 	p.wg.Wait()
 }
 
-func (p *Pool) Tasks() chan model.Task {
+func (p *Pool) Tasks() chan model.TaskEnvelope {
 	return p.tasks
 }
 

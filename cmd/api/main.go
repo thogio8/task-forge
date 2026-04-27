@@ -103,8 +103,8 @@ func main() {
 
 	executor.Register("echo", handlers.Echo(logger))
 
-	processFunc := func(task model.Task) {
-		executor.Execute(context.Background(), task)
+	processFunc := func(ctx context.Context, task model.Task) {
+		executor.Execute(ctx, task)
 	}
 
 	pool := worker.NewPool(cfg.WorkerPoolSize, processFunc, logger)

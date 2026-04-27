@@ -69,7 +69,7 @@ func TestConsumer_ClaimsAndDispatchesTask(t *testing.T) {
 
 	task := &model.Task{ID: taskID, Status: "running", Payload: json.RawMessage(`{"type":"echo"}`)}
 	claimer := &mockTaskClaimer{returnTask: task}
-	ch := make(chan model.Task, 10)
+	ch := make(chan model.TaskEnvelope, 10)
 
 	consumer := NewConsumerWithReader(reader, claimer, ch, "test-worker", testLogger)
 
@@ -92,8 +92,8 @@ func TestConsumer_ClaimsAndDispatchesTask(t *testing.T) {
 	}
 
 	dispatched := <-ch
-	if dispatched.ID != taskID {
-		t.Errorf("expected dispatched task ID %s, got %s", taskID, dispatched.ID)
+	if dispatched.Task.ID != taskID {
+		t.Errorf("expected dispatched task ID %s, got %s", taskID, dispatched.Task.ID)
 	}
 
 	if len(reader.committed) != 1 {
@@ -112,7 +112,7 @@ func TestConsumer_SkipsAlreadyClaimedTask(t *testing.T) {
 	}
 
 	claimer := &mockTaskClaimer{returnTask: nil} // nil = already claimed
-	ch := make(chan model.Task, 10)
+	ch := make(chan model.TaskEnvelope, 10)
 
 	consumer := NewConsumerWithReader(reader, claimer, ch, "test-worker", testLogger)
 
@@ -142,7 +142,7 @@ func TestConsumer_DoesNotCommitOnDBError(t *testing.T) {
 	}
 
 	claimer := &mockTaskClaimer{err: fmt.Errorf("db unavailable")}
-	ch := make(chan model.Task, 10)
+	ch := make(chan model.TaskEnvelope, 10)
 
 	consumer := NewConsumerWithReader(reader, claimer, ch, "test-worker", testLogger)
 
@@ -169,7 +169,7 @@ func TestConsumer_CommitsInvalidJSON(t *testing.T) {
 	}
 
 	claimer := &mockTaskClaimer{}
-	ch := make(chan model.Task, 10)
+	ch := make(chan model.TaskEnvelope, 10)
 
 	consumer := NewConsumerWithReader(reader, claimer, ch, "test-worker", testLogger)
 
@@ -202,7 +202,7 @@ func TestConsumer_CommitsInvalidUUID(t *testing.T) {
 	}
 
 	claimer := &mockTaskClaimer{}
-	ch := make(chan model.Task, 10)
+	ch := make(chan model.TaskEnvelope, 10)
 
 	consumer := NewConsumerWithReader(reader, claimer, ch, "test-worker", testLogger)
 
@@ -228,7 +228,7 @@ func TestConsumer_CommitsInvalidUUID(t *testing.T) {
 func TestConsumer_StopsOnContextCancel(t *testing.T) {
 	reader := &mockMessageReader{} // no messages, FetchMessage will block
 	claimer := &mockTaskClaimer{}
-	ch := make(chan model.Task, 10)
+	ch := make(chan model.TaskEnvelope, 10)
 
 	consumer := NewConsumerWithReader(reader, claimer, ch, "test-worker", testLogger)
 

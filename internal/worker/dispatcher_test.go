@@ -31,7 +31,7 @@ func TestDispatcher_ClaimsAndDispatches(t *testing.T) {
 		},
 	}
 
-	ch := make(chan model.Task, 10)
+	ch := make(chan model.TaskEnvelope, 10)
 
 	dispatcher := NewDispatcher(mock, ch, 50*time.Millisecond, 10, "test-worker", testLogger)
 
@@ -61,7 +61,7 @@ func TestDispatcher_StopsOnNextCancel(t *testing.T) {
 		},
 	}
 
-	ch := make(chan model.Task, 10)
+	ch := make(chan model.TaskEnvelope, 10)
 
 	dispatcher := NewDispatcher(mock, ch, 50*time.Millisecond, 10, "test-worker", testLogger)
 
@@ -89,7 +89,7 @@ func TestDispatcher_ContinuesOnError(t *testing.T) {
 		err:   fmt.Errorf("db connection lost"),
 	}
 
-	ch := make(chan model.Task, 10)
+	ch := make(chan model.TaskEnvelope, 10)
 
 	dispatcher := NewDispatcher(mock, ch, 50*time.Millisecond, 10, "test-worker", testLogger)
 

@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"sync/atomic"
@@ -16,14 +17,14 @@ func TestPool_AllTasksProcessed(t *testing.T) {
 	var counter atomic.Int64
 
 	workerCount := 3
-	processFunc := func(_ model.Task) { counter.Add(1) }
+	processFunc := func(_ context.Context, _ model.Task) { counter.Add(1) }
 
 	pool := NewPool(workerCount, processFunc, testLogger)
 
 	pool.Start()
 
 	for range 20 {
-		pool.Submit(model.Task{})
+		pool.Submit(context.Background(), model.Task{})
 	}
 
 	pool.Stop()
@@ -37,7 +38,7 @@ func TestPool_StopBlocksUntilDone(t *testing.T) {
 	var counter atomic.Int64
 
 	workerCount := 3
-	processFunc := func(_ model.Task) {
+	processFunc := func(_ context.Context, _ model.Task) {
 		time.Sleep(50 * time.Millisecond)
 		counter.Add(1)
 	}
@@ -47,7 +48,7 @@ func TestPool_StopBlocksUntilDone(t *testing.T) {
 	pool.Start()
 
 	for range 10 {
-		pool.Submit(model.Task{})
+		pool.Submit(context.Background(), model.Task{})
 	}
 
 	pool.Stop()

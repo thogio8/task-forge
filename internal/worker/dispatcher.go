@@ -17,7 +17,7 @@ type DispatcherRepository interface {
 
 type Dispatcher struct {
 	repo           DispatcherRepository
-	tasks          chan<- model.Task
+	tasks          chan<- model.TaskEnvelope
 	pollInterval   time.Duration
 	batchSize      int
 	workerID       string
@@ -28,7 +28,7 @@ type Dispatcher struct {
 	pollDuration   metric.Float64Histogram
 }
 
-func NewDispatcher(repo DispatcherRepository, tasks chan<- model.Task, pollInterval time.Duration, batchSize int, workerID string, logger *slog.Logger) *Dispatcher {
+func NewDispatcher(repo DispatcherRepository, tasks chan<- model.TaskEnvelope, pollInterval time.Duration, batchSize int, workerID string, logger *slog.Logger) *Dispatcher {
 	meter := otel.Meter("taskforge.dispatcher")
 
 	cycleCounter, _ := meter.Int64Counter(
@@ -87,7 +87,7 @@ func (d *Dispatcher) Run(ctx context.Context) {
 			}
 
 			for _, task := range tasks {
-				d.tasks <- task
+				d.tasks <- model.TaskEnvelope{Task: task, Ctx: ctx}
 			}
 		case <-ctx.Done():
 			close(d.done)

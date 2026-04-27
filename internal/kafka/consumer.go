@@ -27,7 +27,7 @@ type TaskClaimer interface {
 type Consumer struct {
 	reader          MessageReader
 	claimer         TaskClaimer
-	tasks           chan<- model.Task
+	tasks           chan<- model.TaskEnvelope
 	workerID        string
 	logger          *slog.Logger
 	done            chan struct{}
@@ -35,7 +35,7 @@ type Consumer struct {
 	claimDuration   metric.Float64Histogram
 }
 
-func NewConsumer(brokers []string, topic string, groupID string, claimer TaskClaimer, tasks chan<- model.Task, workerID string, logger *slog.Logger) *Consumer {
+func NewConsumer(brokers []string, topic string, groupID string, claimer TaskClaimer, tasks chan<- model.TaskEnvelope, workerID string, logger *slog.Logger) *Consumer {
 	reader := kafkago.NewReader(kafkago.ReaderConfig{
 		Brokers: brokers,
 		GroupID: groupID,
@@ -45,7 +45,7 @@ func NewConsumer(brokers []string, topic string, groupID string, claimer TaskCla
 	return NewConsumerWithReader(reader, claimer, tasks, workerID, logger)
 }
 
-func NewConsumerWithReader(reader MessageReader, claimer TaskClaimer, tasks chan<- model.Task, workerID string, logger *slog.Logger) *Consumer {
+func NewConsumerWithReader(reader MessageReader, claimer TaskClaimer, tasks chan<- model.TaskEnvelope, workerID string, logger *slog.Logger) *Consumer {
 	meter := otel.Meter("taskforge.kafka")
 
 	receivedCounter, _ := meter.Int64Counter(
@@ -144,7 +144,7 @@ func (c *Consumer) processMessage(ctx context.Context, msg kafkago.Message) {
 		return
 	}
 
-	c.tasks <- *task
+	c.tasks <- model.TaskEnvelope{Task: *task, Ctx: ctx}
 	if commitErr := c.reader.CommitMessages(ctx, msg); commitErr != nil {
 		c.logger.Warn("failed to commit kafka message", "worker_id", c.workerID, "error", commitErr)
 	}
