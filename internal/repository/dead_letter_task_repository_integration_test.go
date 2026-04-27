@@ -154,6 +154,60 @@ func TestGetAll_Empty(t *testing.T) {
 	}
 }
 
+func TestDLQ_CountAll(t *testing.T) {
+	cleanTasks(t)
+	cleanDeadLetterTasks(t)
+
+	taskRepo := NewTaskRepository(testPool, testLogger)
+	deadLetterTaskRepo := NewDeadLetterRepository(testPool, testLogger)
+
+	for i := range 3 {
+		task := model.Task{
+			Status:  model.StatusPending,
+			Payload: []byte(`{"type":"echo"}`),
+		}
+
+		_, err := taskRepo.Create(context.Background(), &task)
+		if err != nil {
+			t.Fatalf("failed to create task %d: %v", i, err)
+		}
+
+		claimTestTasks(t, taskRepo, 1)
+
+		if err := taskRepo.FailTask(context.Background(), task.ID, "boom", nil); err != nil {
+			t.Fatalf("failed to fail task %d: %v", i, err)
+		}
+
+		if err := deadLetterTaskRepo.MoveToDLQ(context.Background(), task.ID); err != nil {
+			t.Fatalf("failed to move task %d to DLQ: %v", i, err)
+		}
+	}
+
+	count, err := deadLetterTaskRepo.CountAll(context.Background())
+	if err != nil {
+		t.Fatalf("CountAll error: %v", err)
+	}
+
+	if count != 3 {
+		t.Errorf("expected 3 dead letter tasks, got %d", count)
+	}
+}
+
+func TestDLQ_CountAll_Empty(t *testing.T) {
+	cleanDeadLetterTasks(t)
+
+	deadLetterTaskRepo := NewDeadLetterRepository(testPool, testLogger)
+
+	count, err := deadLetterTaskRepo.CountAll(context.Background())
+	if err != nil {
+		t.Fatalf("CountAll error: %v", err)
+	}
+
+	if count != 0 {
+		t.Errorf("expected 0 dead letter tasks in empty DLQ, got %d", count)
+	}
+}
+
 func cleanDeadLetterTasks(t *testing.T) {
 	t.Helper()
 	_, err := testPool.Exec(context.Background(), "DELETE FROM dead_letter_tasks")

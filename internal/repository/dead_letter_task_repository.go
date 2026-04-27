@@ -10,6 +10,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/thogio8/task-forge/internal/apperror"
 	"github.com/thogio8/task-forge/internal/model"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric"
 )
 
 type DeadLetterTaskRepository struct {
@@ -18,7 +20,38 @@ type DeadLetterTaskRepository struct {
 }
 
 func NewDeadLetterRepository(pool *pgxpool.Pool, logger *slog.Logger) *DeadLetterTaskRepository {
-	return &DeadLetterTaskRepository{pgxPool: pool, logger: logger}
+	repo := &DeadLetterTaskRepository{pgxPool: pool, logger: logger}
+
+	meter := otel.Meter("taskforge.dlq")
+	_, _ = meter.Int64ObservableGauge(
+		"dlq.size",
+		metric.WithDescription("Number of tasks currently in the dead letter queue"),
+		metric.WithInt64Callback(func(ctx context.Context, o metric.Int64Observer) error {
+			count, err := repo.CountAll(ctx)
+			if err != nil {
+				logger.Warn("failed to observe dlq.size", "error", err)
+				return nil
+			}
+			o.Observe(count)
+			return nil
+		}),
+	)
+
+	return repo
+}
+
+func (d *DeadLetterTaskRepository) CountAll(ctx context.Context) (int64, error) {
+	query := `SELECT COUNT(*) FROM dead_letter_tasks`
+
+	var count int64
+	err := d.pgxPool.QueryRow(ctx, query).Scan(&count)
+
+	if err != nil {
+		d.logger.Error("failed to count dead letter tasks", "error", err)
+		return 0, apperror.Internal("failed to count dead letter tasks", err)
+	}
+
+	return count, nil
 }
 
 func (d *DeadLetterTaskRepository) MoveToDLQ(ctx context.Context, taskID uuid.UUID) error {
