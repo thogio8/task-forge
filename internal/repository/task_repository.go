@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/thogio8/task-forge/internal/apperror"
 	"github.com/thogio8/task-forge/internal/model"
+	"github.com/thogio8/task-forge/internal/telemetry"
 )
 
 type TaskRepository struct {
@@ -415,13 +416,14 @@ func scanTask(s scanner) (model.Task, error) {
 func (t *TaskRepository) insertOutboxEvent(ctx context.Context, tx pgx.Tx, taskID uuid.UUID) error {
 	eventType := "task.created"
 	payload := fmt.Sprintf(`{"task_id":"%s","event_type":"%s"}`, taskID, eventType)
+	traceContext := telemetry.ExtractTraceparent(ctx)
 
 	query := `
-		INSERT INTO outbox (event_type, payload)
-		VALUES ($1, $2)
+		INSERT INTO outbox (event_type, payload, trace_context)
+		VALUES ($1, $2, $3)
 	`
 
-	_, err := tx.Exec(ctx, query, eventType, payload)
+	_, err := tx.Exec(ctx, query, eventType, payload, traceContext)
 
 	if err != nil {
 		t.logger.Error("failed to insert outbox event", "error", err)

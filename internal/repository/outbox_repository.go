@@ -21,7 +21,7 @@ func NewOutboxRepository(pool *pgxpool.Pool, logger *slog.Logger) *OutboxReposit
 
 func (o *OutboxRepository) GetUnpublished(ctx context.Context, limit int) ([]model.OutboxEvent, error) {
 	query := `
-		SELECT id, event_type, payload, created_at, published_at
+		SELECT id, event_type, payload, created_at, published_at, trace_context
 		FROM outbox
 		WHERE published_at IS NULL
 		ORDER BY created_at
@@ -118,6 +118,7 @@ func scanOutbox(s scanner) (model.OutboxEvent, error) {
 	err := s.Scan(
 		&outbox.ID, &outbox.EventType, &outbox.Payload,
 		&outbox.CreatedAt, &outbox.PublishedAt,
+		&outbox.TraceContext,
 	)
 	return outbox, err
 }
