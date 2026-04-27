@@ -13,6 +13,7 @@ import (
 	"github.com/thogio8/task-forge/internal/telemetry"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
 )
 
@@ -85,11 +86,27 @@ func (e *Executor) Execute(ctx context.Context, task model.Task) {
 	var payload struct {
 		Type string `json:"type"`
 	}
-	err := json.Unmarshal(task.Payload, &payload)
+	payloadErr := json.Unmarshal(task.Payload, &payload)
 
-	if err != nil {
-		e.logger.Error("invalid payload", "task_id", task.ID, "error", err)
-		if failErr := e.repo.FailTask(ctx, task.ID, "invalid payload: "+err.Error(), nil); failErr != nil {
+	spanTaskType := "unknown"
+	if payloadErr == nil && payload.Type != "" {
+		if _, ok := e.handlers[payload.Type]; ok {
+			spanTaskType = payload.Type
+		}
+	}
+
+	ctx, span := telemetry.StartSpan(ctx, "task.execute "+spanTaskType,
+		attribute.String("task.id", task.ID.String()),
+		attribute.String("task.type", spanTaskType),
+		attribute.Int("task.attempt", task.AttemptCount+1),
+	)
+	defer span.End()
+
+	if payloadErr != nil {
+		span.RecordError(payloadErr)
+		span.SetStatus(codes.Error, "invalid payload")
+		e.logger.Error("invalid payload", "task_id", task.ID, "error", payloadErr)
+		if failErr := e.repo.FailTask(ctx, task.ID, "invalid payload: "+payloadErr.Error(), nil); failErr != nil {
 			e.logger.Error("failed to fail task with invalid payload", "task_id", task.ID, "error", failErr)
 		}
 		e.failedCounter.Add(ctx, 1, metric.WithAttributes(
@@ -100,6 +117,7 @@ func (e *Executor) Execute(ctx context.Context, task model.Task) {
 	}
 
 	if payload.Type == "" {
+		span.SetStatus(codes.Error, "missing task type")
 		e.logger.Error("missing task type in payload", "task_id", task.ID)
 		if failErr := e.repo.FailTask(ctx, task.ID, "missing task type in payload", nil); failErr != nil {
 			e.logger.Error("failed to fail task with missing type", "task_id", task.ID, "error", failErr)
@@ -114,6 +132,7 @@ func (e *Executor) Execute(ctx context.Context, task model.Task) {
 	handler, exists := e.handlers[payload.Type]
 
 	if !exists {
+		span.SetStatus(codes.Error, "unknown task type")
 		e.logger.Error("unknown task type", "task_id", task.ID, "type", payload.Type)
 		if failErr := e.repo.FailTask(ctx, task.ID, "unknown task type: "+payload.Type, nil); failErr != nil {
 			e.logger.Error("failed to fail task with unknown type", "task_id", task.ID, "error", failErr)
@@ -127,19 +146,23 @@ func (e *Executor) Execute(ctx context.Context, task model.Task) {
 
 	e.logger.Info("executing task", "task_id", task.ID, "type", payload.Type)
 
-	ctx, cancel := context.WithTimeout(ctx, e.taskTimeout)
+	handlerCtx, cancel := context.WithTimeout(ctx, e.taskTimeout)
 	defer cancel()
 	start := time.Now()
-	err = handler(ctx, task.Payload)
-	e.execDuration.Record(ctx, time.Since(start).Seconds(), metric.WithAttributes(
+	err := handler(handlerCtx, task.Payload)
+	e.execDuration.Record(handlerCtx, time.Since(start).Seconds(), metric.WithAttributes(
 		attribute.String("task_type", payload.Type),
 	))
 
 	if err != nil {
 		errorType := "handler"
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		if errors.Is(handlerCtx.Err(), context.DeadlineExceeded) {
 			errorType = "timeout"
 		}
+
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		span.SetAttributes(attribute.String("error.type", errorType))
 
 		if task.AttemptCount+1 < task.MaxRetries {
 			backoff := calculateBackoff(task.AttemptCount + 1)
@@ -151,6 +174,7 @@ func (e *Executor) Execute(ctx context.Context, task model.Task) {
 				e.logger.Error("failed to mark task as pending", "task_id", task.ID, "error", failErr)
 			} else {
 				e.logger.Warn("task failed, scheduling retry", "task_id", task.ID, "attempt", task.AttemptCount+1, "next_retry", nextRetryAt)
+				span.SetAttributes(attribute.String("task.outcome", "retry_scheduled"))
 				e.retriedCounter.Add(ctx, 1, metric.WithAttributes(
 					attribute.String("task_type", payload.Type),
 					attribute.String("error_type", errorType),
@@ -163,6 +187,7 @@ func (e *Executor) Execute(ctx context.Context, task model.Task) {
 				e.logger.Error("failed to move task to DLQ", "task_id", task.ID, "error", moveErr)
 			} else {
 				e.logger.Error("task permanently failed, moved to DLQ", "task_id", task.ID, "attempt", task.AttemptCount+1)
+				span.SetAttributes(attribute.String("task.outcome", "dlq"))
 				e.failedCounter.Add(ctx, 1, metric.WithAttributes(
 					attribute.String("task_type", payload.Type),
 					attribute.String("error_type", errorType),
@@ -170,17 +195,22 @@ func (e *Executor) Execute(ctx context.Context, task model.Task) {
 			}
 		}
 
-	} else {
-		completeErr := e.repo.CompleteTask(ctx, task.ID)
-		if completeErr != nil {
-			e.logger.Error("failed to mark task as completed", "task_id", task.ID, "error", completeErr)
-		} else {
-			e.logger.Info("task completed", "task_id", task.ID)
-			e.completedCounter.Add(ctx, 1, metric.WithAttributes(
-				attribute.String("task_type", payload.Type),
-			))
-		}
+		return
 	}
+
+	completeErr := e.repo.CompleteTask(ctx, task.ID)
+	if completeErr != nil {
+		span.RecordError(completeErr)
+		span.SetStatus(codes.Error, completeErr.Error())
+		e.logger.Error("failed to mark task as completed", "task_id", task.ID, "error", completeErr)
+		return
+	}
+
+	e.logger.Info("task completed", "task_id", task.ID)
+	span.SetAttributes(attribute.String("task.outcome", "completed"))
+	e.completedCounter.Add(ctx, 1, metric.WithAttributes(
+		attribute.String("task_type", payload.Type),
+	))
 }
 
 func calculateBackoff(attempt int) time.Duration {

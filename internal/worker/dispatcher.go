@@ -8,6 +8,8 @@ import (
 	"github.com/thogio8/task-forge/internal/model"
 	"github.com/thogio8/task-forge/internal/telemetry"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
 )
 
@@ -71,29 +73,43 @@ func (d *Dispatcher) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			d.cycleCounter.Add(ctx, 1)
-			start := time.Now()
-			tasks, err := d.repo.ClaimTasks(ctx, d.workerID, d.batchSize)
-			d.pollDuration.Record(ctx, time.Since(start).Seconds())
-
-			if err != nil {
-				d.logger.Error("failed to claim tasks", "error", err)
-				continue
-			}
-
-			if len(tasks) > 0 {
-				d.claimedCounter.Add(ctx, int64(len(tasks)))
-				d.logger.Info("tasks claimed", "count", len(tasks))
-			}
-
-			for _, task := range tasks {
-				d.tasks <- model.TaskEnvelope{Task: task, Ctx: ctx}
-			}
+			d.runCycle(ctx)
 		case <-ctx.Done():
 			close(d.done)
 			d.logger.Info("dispatcher stopped")
 			return
 		}
+	}
+}
+
+func (d *Dispatcher) runCycle(ctx context.Context) {
+	cycleCtx, span := telemetry.StartSpan(ctx, "dispatcher.poll",
+		attribute.String("worker.id", d.workerID),
+		attribute.Int("batch.size", d.batchSize),
+	)
+	defer span.End()
+
+	d.cycleCounter.Add(cycleCtx, 1)
+	start := time.Now()
+	tasks, err := d.repo.ClaimTasks(cycleCtx, d.workerID, d.batchSize)
+	d.pollDuration.Record(cycleCtx, time.Since(start).Seconds())
+
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		d.logger.Error("failed to claim tasks", "error", err)
+		return
+	}
+
+	span.SetAttributes(attribute.Int("claimed.count", len(tasks)))
+
+	if len(tasks) > 0 {
+		d.claimedCounter.Add(cycleCtx, int64(len(tasks)))
+		d.logger.Info("tasks claimed", "count", len(tasks))
+	}
+
+	for _, task := range tasks {
+		d.tasks <- model.TaskEnvelope{Task: task, Ctx: cycleCtx}
 	}
 }
 
