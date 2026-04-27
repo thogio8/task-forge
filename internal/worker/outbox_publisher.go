@@ -8,7 +8,10 @@ import (
 
 	"github.com/thogio8/task-forge/internal/model"
 	"github.com/thogio8/task-forge/internal/telemetry"
+	kafkago "github.com/segmentio/kafka-go"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
 )
 
@@ -20,7 +23,7 @@ type OutboxPublisherRepository interface {
 }
 
 type OutboxProducer interface {
-	Publish(ctx context.Context, key string, value []byte) error
+	Publish(ctx context.Context, key string, value []byte, headers ...kafkago.Header) error
 }
 
 type OutboxPublisher struct {
@@ -105,50 +108,81 @@ func (o *OutboxPublisher) Run(ctx context.Context) {
 }
 
 func (o *OutboxPublisher) processCycle(ctx context.Context) {
-	outboxEvents, err := o.repo.GetUnpublished(ctx, o.batchSize)
+	cycleCtx, cycleSpan := telemetry.StartSpan(ctx, "outbox.publish.cycle",
+		attribute.String("worker.id", o.workerID),
+	)
+	defer cycleSpan.End()
 
-	var outboxEventsIDs []int64
+	outboxEvents, err := o.repo.GetUnpublished(cycleCtx, o.batchSize)
 
 	if err != nil {
+		cycleSpan.RecordError(err)
+		cycleSpan.SetStatus(codes.Error, err.Error())
 		o.logger.Error("failed to retrieve unpublished outbox events", "worker_id", o.workerID, "error", err)
 		return
 	}
 
+	cycleSpan.SetAttributes(attribute.Int("batch.size", len(outboxEvents)))
+
+	var outboxEventsIDs []int64
+
 	for _, outboxEvent := range outboxEvents {
-		taskID, extractErr := extractTaskID(outboxEvent.Payload)
-		if extractErr != nil {
-			o.logger.Warn("failed to extract task_id from outbox payload", "worker_id", o.workerID, "outbox_event_id", outboxEvent.ID, "error", extractErr)
-		}
-
-		start := time.Now()
-		err = o.producer.Publish(ctx, taskID, outboxEvent.Payload)
-		o.publishDuration.Record(ctx, time.Since(start).Seconds())
-
-		if err != nil {
-			o.logger.Error("failed to publish outbox event", "worker_id", o.workerID, "outbox_event_id", outboxEvent.ID, "error", err)
-			o.errorsCounter.Add(ctx, 1)
-			continue
-		}
-
-		o.publishedCounter.Add(ctx, 1)
-
-		outboxEventsIDs = append(outboxEventsIDs, outboxEvent.ID)
+		o.publishEvent(ctx, outboxEvent, &outboxEventsIDs)
 	}
 
 	if len(outboxEventsIDs) > 0 {
-		err = o.repo.MarkPublished(ctx, outboxEventsIDs)
-
-		if err != nil {
+		if err := o.repo.MarkPublished(cycleCtx, outboxEventsIDs); err != nil {
+			cycleSpan.RecordError(err)
+			cycleSpan.SetStatus(codes.Error, err.Error())
 			o.logger.Error("failed to mark outbox events as published", "worker_id", o.workerID, "error", err)
 			return
 		}
 	}
 
-	err = o.repo.Purge(ctx, o.retention)
-
-	if err != nil {
+	if err := o.repo.Purge(cycleCtx, o.retention); err != nil {
 		o.logger.Error("failed to purge outbox events", "worker_id", o.workerID, "error", err)
 	}
+}
+
+// publishEvent publishes a single outbox event to Kafka, propagating the
+// trace context stored at INSERT time so that the trace continues from the
+// originating HTTP request through Kafka into the consumer.
+func (o *OutboxPublisher) publishEvent(rootCtx context.Context, event model.OutboxEvent, publishedIDs *[]int64) {
+	publishCtx := rootCtx
+	if event.TraceContext != nil {
+		publishCtx = telemetry.ContextFromTraceparent(rootCtx, *event.TraceContext)
+	}
+
+	publishCtx, span := telemetry.StartSpan(publishCtx, "messaging.publish",
+		attribute.String("messaging.system", "kafka"),
+		attribute.String("messaging.destination.name", "tasks"),
+		attribute.String("messaging.operation", "publish"),
+		attribute.Int64("outbox.event.id", event.ID),
+	)
+	defer span.End()
+
+	var headers telemetry.KafkaHeaderCarrier
+	otel.GetTextMapPropagator().Inject(publishCtx, &headers)
+
+	taskID, extractErr := extractTaskID(event.Payload)
+	if extractErr != nil {
+		o.logger.Warn("failed to extract task_id from outbox payload", "worker_id", o.workerID, "outbox_event_id", event.ID, "error", extractErr)
+	}
+
+	start := time.Now()
+	err := o.producer.Publish(publishCtx, taskID, event.Payload, headers...)
+	o.publishDuration.Record(publishCtx, time.Since(start).Seconds())
+
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		o.logger.Error("failed to publish outbox event", "worker_id", o.workerID, "outbox_event_id", event.ID, "error", err)
+		o.errorsCounter.Add(publishCtx, 1)
+		return
+	}
+
+	o.publishedCounter.Add(publishCtx, 1)
+	*publishedIDs = append(*publishedIDs, event.ID)
 }
 
 func (o *OutboxPublisher) Stop() {

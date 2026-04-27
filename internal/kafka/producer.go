@@ -7,7 +7,7 @@ import (
 )
 
 type Producer struct {
-	writeFn func(ctx context.Context, key string, value []byte) error
+	writeFn func(ctx context.Context, key string, value []byte, headers []kafkago.Header) error
 	closeFn func() error
 }
 
@@ -19,18 +19,19 @@ func NewProducer(brokers []string, topic string) *Producer {
 	}
 
 	return &Producer{
-		writeFn: func(ctx context.Context, key string, value []byte) error {
+		writeFn: func(ctx context.Context, key string, value []byte, headers []kafkago.Header) error {
 			return w.WriteMessages(ctx, kafkago.Message{
-				Key:   []byte(key),
-				Value: value,
+				Key:     []byte(key),
+				Value:   value,
+				Headers: headers,
 			})
 		},
 		closeFn: w.Close,
 	}
 }
 
-func (p *Producer) Publish(ctx context.Context, key string, value []byte) error {
-	return p.writeFn(ctx, key, value)
+func (p *Producer) Publish(ctx context.Context, key string, value []byte, headers ...kafkago.Header) error {
+	return p.writeFn(ctx, key, value, headers)
 }
 
 func (p *Producer) Close() error {

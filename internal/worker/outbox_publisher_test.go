@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	kafkago "github.com/segmentio/kafka-go"
 	"github.com/thogio8/task-forge/internal/model"
 )
 
@@ -57,17 +58,18 @@ type mockProducer struct {
 }
 
 type publishedMessage struct {
-	key   string
-	value []byte
+	key     string
+	value   []byte
+	headers []kafkago.Header
 }
 
-func (m *mockProducer) Publish(_ context.Context, key string, value []byte) error {
+func (m *mockProducer) Publish(_ context.Context, key string, value []byte, headers ...kafkago.Header) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.err != nil {
 		return m.err
 	}
-	m.messages = append(m.messages, publishedMessage{key: key, value: value})
+	m.messages = append(m.messages, publishedMessage{key: key, value: value, headers: headers})
 	return nil
 }
 

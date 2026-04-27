@@ -4,19 +4,22 @@ import (
 	"context"
 	"fmt"
 	"testing"
+
+	kafkago "github.com/segmentio/kafka-go"
 )
 
 type messageRecord struct {
-	key   string
-	value []byte
+	key     string
+	value   []byte
+	headers []kafkago.Header
 }
 
 func TestProducer_Publish(t *testing.T) {
 	var messages []messageRecord
 
 	producer := &Producer{
-		writeFn: func(_ context.Context, key string, value []byte) error {
-			messages = append(messages, messageRecord{key: key, value: value})
+		writeFn: func(_ context.Context, key string, value []byte, headers []kafkago.Header) error {
+			messages = append(messages, messageRecord{key: key, value: value, headers: headers})
 			return nil
 		},
 		closeFn: func() error { return nil },
@@ -40,9 +43,32 @@ func TestProducer_Publish(t *testing.T) {
 	}
 }
 
+func TestProducer_Publish_PassesHeaders(t *testing.T) {
+	var captured []kafkago.Header
+
+	producer := &Producer{
+		writeFn: func(_ context.Context, _ string, _ []byte, headers []kafkago.Header) error {
+			captured = headers
+			return nil
+		},
+		closeFn: func() error { return nil },
+	}
+
+	err := producer.Publish(context.Background(), "k", []byte("v"),
+		kafkago.Header{Key: "traceparent", Value: []byte("00-abc-def-01")},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(captured) != 1 || captured[0].Key != "traceparent" {
+		t.Errorf("expected traceparent header, got %+v", captured)
+	}
+}
+
 func TestProducer_Publish_Error(t *testing.T) {
 	producer := &Producer{
-		writeFn: func(_ context.Context, _ string, _ []byte) error {
+		writeFn: func(_ context.Context, _ string, _ []byte, _ []kafkago.Header) error {
 			return fmt.Errorf("kafka unavailable")
 		},
 		closeFn: func() error { return nil },
@@ -62,7 +88,7 @@ func TestProducer_Close(t *testing.T) {
 	closed := false
 
 	producer := &Producer{
-		writeFn: func(_ context.Context, _ string, _ []byte) error { return nil },
+		writeFn: func(_ context.Context, _ string, _ []byte, _ []kafkago.Header) error { return nil },
 		closeFn: func() error {
 			closed = true
 			return nil

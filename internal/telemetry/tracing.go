@@ -48,3 +48,15 @@ func ExtractTraceparent(ctx context.Context) *string {
 	}
 	return &tp
 }
+
+// ContextFromTraceparent rebuilds a context with a remote span context from a
+// "traceparent" string previously serialized by ExtractTraceparent. Used to
+// resume an async trace across a process or storage boundary (DB, queue).
+// Returns parent unchanged if traceparent is empty or malformed.
+func ContextFromTraceparent(parent context.Context, traceparent string) context.Context {
+	if traceparent == "" {
+		return parent
+	}
+	carrier := propagation.MapCarrier{"traceparent": traceparent}
+	return otel.GetTextMapPropagator().Extract(parent, carrier)
+}
