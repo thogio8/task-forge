@@ -152,7 +152,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "sum(increase(taskforge_task_completed_count_total[15m]))",
+          "expr": "sum(increase(taskforge_task_completed_count_total[15m])) or vector(0)",
           "refId": "A"
         }
       ],
@@ -177,7 +177,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "sum(increase(taskforge_task_failed_count_total[15m]))",
+          "expr": "sum(increase(taskforge_task_failed_count_total[15m])) or vector(0)",
           "refId": "A"
         }
       ],
@@ -202,7 +202,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "sum(increase(taskforge_task_retried_count_total[15m]))",
+          "expr": "sum(increase(taskforge_task_retried_count_total[15m])) or vector(0)",
           "refId": "A"
         }
       ],
@@ -227,7 +227,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "sum(increase(taskforge_task_completed_count_total[15m])) / (sum(increase(taskforge_task_completed_count_total[15m])) + sum(increase(taskforge_task_failed_count_total[15m])))",
+          "expr": "(sum(increase(taskforge_task_completed_count_total[15m])) or vector(0)) / clamp_min(sum(increase(taskforge_task_completed_count_total[15m])) or vector(0) + sum(increase(taskforge_task_failed_count_total[15m])) or vector(0), 1)",
           "refId": "A"
         }
       ],
