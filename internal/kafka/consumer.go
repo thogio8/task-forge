@@ -11,6 +11,8 @@ import (
 	"github.com/thogio8/task-forge/internal/model"
 	"github.com/thogio8/task-forge/internal/telemetry"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
 )
 
@@ -105,13 +107,27 @@ func (c *Consumer) Stop() {
 func (c *Consumer) processMessage(ctx context.Context, msg kafkago.Message) {
 	c.receivedCounter.Add(ctx, 1)
 
+	carrier := telemetry.KafkaHeaderCarrier(msg.Headers)
+	parentCtx := otel.GetTextMapPropagator().Extract(ctx, &carrier)
+
+	spanCtx, span := telemetry.StartSpan(parentCtx, "messaging.receive",
+		attribute.String("messaging.system", "kafka"),
+		attribute.String("messaging.destination.name", "tasks"),
+		attribute.String("messaging.operation", "receive"),
+		attribute.Int64("messaging.kafka.message.offset", msg.Offset),
+		attribute.Int("messaging.kafka.message.partition", msg.Partition),
+	)
+	defer span.End()
+
 	var data struct {
 		TaskID string `json:"task_id"`
 	}
 
 	if err := json.Unmarshal(msg.Value, &data); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "invalid kafka payload")
 		c.logger.Error("failed to unmarshal kafka message", "worker_id", c.workerID, "error", err)
-		if commitErr := c.reader.CommitMessages(ctx, msg); commitErr != nil {
+		if commitErr := c.reader.CommitMessages(spanCtx, msg); commitErr != nil {
 			c.logger.Warn("failed to commit kafka message", "worker_id", c.workerID, "error", commitErr)
 		}
 		return
@@ -119,33 +135,39 @@ func (c *Consumer) processMessage(ctx context.Context, msg kafkago.Message) {
 
 	taskID, err := uuid.Parse(data.TaskID)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "invalid task ID")
 		c.logger.Error("invalid task ID in kafka message", "worker_id", c.workerID, "task_id", data.TaskID, "error", err)
 
-		if commitErr := c.reader.CommitMessages(ctx, msg); commitErr != nil {
+		if commitErr := c.reader.CommitMessages(spanCtx, msg); commitErr != nil {
 			c.logger.Warn("failed to commit kafka message", "worker_id", c.workerID, "error", commitErr)
 		}
 		return
 	}
 
+	span.SetAttributes(attribute.String("task.id", taskID.String()))
+
 	start := time.Now()
-	task, err := c.claimer.ClaimTask(ctx, c.workerID, taskID)
-	c.claimDuration.Record(ctx, time.Since(start).Seconds())
+	task, err := c.claimer.ClaimTask(spanCtx, c.workerID, taskID)
+	c.claimDuration.Record(spanCtx, time.Since(start).Seconds())
 
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		c.logger.Error("failed to claim task from kafka event", "worker_id", c.workerID, "task_id", taskID, "error", err)
 		return
 	}
 
 	if task == nil {
 		c.logger.Debug("task already claimed or not found", "worker_id", c.workerID, "task_id", taskID)
-		if commitErr := c.reader.CommitMessages(ctx, msg); commitErr != nil {
+		if commitErr := c.reader.CommitMessages(spanCtx, msg); commitErr != nil {
 			c.logger.Warn("failed to commit kafka message", "worker_id", c.workerID, "error", commitErr)
 		}
 		return
 	}
 
-	c.tasks <- model.TaskEnvelope{Task: *task, Ctx: ctx}
-	if commitErr := c.reader.CommitMessages(ctx, msg); commitErr != nil {
+	c.tasks <- model.TaskEnvelope{Task: *task, Ctx: spanCtx}
+	if commitErr := c.reader.CommitMessages(spanCtx, msg); commitErr != nil {
 		c.logger.Warn("failed to commit kafka message", "worker_id", c.workerID, "error", commitErr)
 	}
 	c.logger.Info("task dispatched from kafka", "worker_id", c.workerID, "task_id", taskID)
