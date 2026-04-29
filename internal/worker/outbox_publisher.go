@@ -127,7 +127,7 @@ func (o *OutboxPublisher) processCycle(ctx context.Context) {
 	var outboxEventsIDs []int64
 
 	for _, outboxEvent := range outboxEvents {
-		o.publishEvent(ctx, outboxEvent, &outboxEventsIDs)
+		o.publishEvent(cycleCtx, outboxEvent, &outboxEventsIDs)
 	}
 
 	if len(outboxEventsIDs) > 0 {
