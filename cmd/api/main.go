@@ -48,6 +48,7 @@ func main() {
 		CollectorEndpoint: cfg.OtelCollectorEndpoint,
 		ServiceName:       cfg.OtelServiceName,
 		ExportInterval:    cfg.OtelExportInterval,
+		TraceSampleRatio:  cfg.OtelTraceSampleRatio,
 	})
 	if err != nil {
 		logger.Error("Failed to setup telemetry", "error", err)

@@ -39,6 +39,7 @@ type Config struct {
 	OtelCollectorEndpoint   string
 	OtelServiceName         string
 	OtelExportInterval      time.Duration
+	OtelTraceSampleRatio    float64
 }
 
 func Load() (Config, error) {
@@ -71,6 +72,7 @@ func Load() (Config, error) {
 	cfg.OtelCollectorEndpoint = getEnvOrDefault("OTEL_COLLECTOR_ENDPOINT", "localhost:4317")
 	cfg.OtelServiceName = getEnvOrDefault("OTEL_SERVICE_NAME", "taskforge")
 	cfg.OtelExportInterval = getEnvOrDefaultDuration("OTEL_EXPORT_INTERVAL", 15*time.Second)
+	cfg.OtelTraceSampleRatio = getEnvOrDefaultFloat("OTEL_TRACE_SAMPLE_RATIO", 1.0)
 
 	// Required fields
 	cfg.DBHost, missing = getEnvRequired("DB_HOST", missing)
@@ -147,6 +149,22 @@ func getEnvOrDefaultInt(key string, defaultValue int) int {
 	}
 
 	result, err := strconv.Atoi(envValue)
+
+	if err != nil {
+		return defaultValue
+	}
+
+	return result
+}
+
+func getEnvOrDefaultFloat(key string, defaultValue float64) float64 {
+	envValue := os.Getenv(key)
+
+	if envValue == "" {
+		return defaultValue
+	}
+
+	result, err := strconv.ParseFloat(envValue, 64)
 
 	if err != nil {
 		return defaultValue

@@ -20,6 +20,7 @@ type Config struct {
 	CollectorEndpoint string
 	ServiceName       string
 	ExportInterval    time.Duration
+	TraceSampleRatio  float64
 }
 
 type Telemetry struct {
@@ -108,6 +109,25 @@ func buildTracerProvider(ctx context.Context, cfg Config, res *resource.Resource
 	return sdktrace.NewTracerProvider(
 		sdktrace.WithResource(res),
 		sdktrace.WithBatcher(exporter),
-		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithSampler(buildSampler(cfg.TraceSampleRatio)),
 	), nil
+}
+
+// buildSampler picks a sampler based on the configured ratio. Wraps with
+// ParentBased so that an inbound traceparent's sampling decision is honored
+// (sampled-in propagation across services); otherwise the local ratio applies.
+//
+// Ratio semantics:
+//
+//	1.0  -> sample every trace (dev default)
+//	0.01 -> sample 1% of root traces (typical prod baseline)
+//	0.0  -> sample nothing (drop all telemetry; not recommended)
+func buildSampler(ratio float64) sdktrace.Sampler {
+	if ratio >= 1.0 {
+		return sdktrace.ParentBased(sdktrace.AlwaysSample())
+	}
+	if ratio <= 0.0 {
+		return sdktrace.ParentBased(sdktrace.NeverSample())
+	}
+	return sdktrace.ParentBased(sdktrace.TraceIDRatioBased(ratio))
 }
