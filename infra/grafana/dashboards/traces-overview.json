@@ -1,0 +1,124 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "tags": ["taskforge", "traces", "tempo"],
+  "title": "TaskForge — Distributed Traces",
+  "uid": "taskforge-traces",
+  "version": 1,
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "table",
+      "title": "Recent traces (any operation)",
+      "description": "Last 20 traces emitted by the taskforge service. Click a trace_id to open the full waterfall in Tempo.",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [
+        {
+          "queryType": "traceql",
+          "query": "{ resource.service.name=\"taskforge\" }",
+          "limit": 20,
+          "tableType": "traces",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 2,
+      "type": "table",
+      "title": "HTTP server traces",
+      "description": "Traces rooted at a HTTP server span. Useful to debug user-facing requests.",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 9 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [
+        {
+          "queryType": "traceql",
+          "query": "{ resource.service.name=\"taskforge\" && span.kind=\"server\" }",
+          "limit": 20,
+          "tableType": "traces",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Slow traces (> 200ms)",
+      "description": "Trace duration filter — surfaces requests that exceeded the soft latency budget.",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 9 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [
+        {
+          "queryType": "traceql",
+          "query": "{ resource.service.name=\"taskforge\" && trace:duration > 200ms }",
+          "limit": 20,
+          "tableType": "traces",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Failed traces (any span error)",
+      "description": "Traces containing at least one span with status=error. The fastest path to a system regression.",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 18 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [
+        {
+          "queryType": "traceql",
+          "query": "{ resource.service.name=\"taskforge\" && status=error }",
+          "limit": 20,
+          "tableType": "traces",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Worker task executions",
+      "description": "Traces with a task.execute span — the actual handler work, post-Kafka delivery.",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 18 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [
+        {
+          "queryType": "traceql",
+          "query": "{ resource.service.name=\"taskforge\" && name =~ \"task.execute.*\" }",
+          "limit": 20,
+          "tableType": "traces",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Kafka publish→receive bridges",
+      "description": "Traces crossing the Kafka boundary. Verifies that the publisher's traceparent reaches the consumer.",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 27 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [
+        {
+          "queryType": "traceql",
+          "query": "{ resource.service.name=\"taskforge\" && (name=\"messaging.publish\" || name=\"messaging.receive\") }",
+          "limit": 20,
+          "tableType": "traces",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}
