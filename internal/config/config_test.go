@@ -41,6 +41,7 @@ func clearOptionalEnv(t *testing.T) {
 	t.Setenv("OTEL_COLLECTOR_ENDPOINT", "")
 	t.Setenv("OTEL_SERVICE_NAME", "")
 	t.Setenv("OTEL_EXPORT_INTERVAL", "")
+	t.Setenv("OTEL_TRACE_SAMPLE_RATIO", "")
 }
 
 func TestLoad_AllVarsSet(t *testing.T) {
@@ -178,6 +179,10 @@ func TestLoad_DefaultsApplied(t *testing.T) {
 	if cfg.OtelExportInterval != 15*time.Second {
 		t.Errorf("expected OtelExportInterval to be 15 seconds, got %v", cfg.OtelExportInterval)
 	}
+
+	if cfg.OtelTraceSampleRatio != 1.0 {
+		t.Errorf("expected OtelTraceSampleRatio to be 1.0 (AlwaysSample default), got %v", cfg.OtelTraceSampleRatio)
+	}
 }
 
 func TestLoad_DefaultsOverride(t *testing.T) {
@@ -287,6 +292,51 @@ func TestLoad_KafkaBrokersMultiple(t *testing.T) {
 
 	if cfg.KafkaBrokers[1] != "broker2:9092" {
 		t.Errorf("expected second broker 'broker2:9092' (trimmed), got '%s'", cfg.KafkaBrokers[1])
+	}
+}
+
+func TestLoad_OtelTraceSampleRatioOverride(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("OTEL_TRACE_SAMPLE_RATIO", "0.05")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.OtelTraceSampleRatio != 0.05 {
+		t.Errorf("expected OtelTraceSampleRatio to be 0.05, got %v", cfg.OtelTraceSampleRatio)
+	}
+}
+
+func TestGetEnvOrDefaultFloat(t *testing.T) {
+	tests := []struct {
+		name     string
+		envValue string
+		setEnv   bool
+		def      float64
+		want     float64
+	}{
+		{"valid float", "0.5", true, 1.0, 0.5},
+		{"valid integer parsed as float", "1", true, 0.0, 1.0},
+		{"valid scientific notation", "1e-2", true, 1.0, 0.01},
+		{"empty falls back to default", "", true, 0.42, 0.42},
+		{"unset falls back to default", "", false, 0.7, 0.7},
+		{"invalid value falls back to default", "not-a-number", true, 0.3, 0.3},
+		{"zero is preserved", "0", true, 1.0, 0.0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			const key = "TF_TEST_FLOAT_VAR"
+			if tt.setEnv {
+				t.Setenv(key, tt.envValue)
+			}
+			got := getEnvOrDefaultFloat(key, tt.def)
+			if got != tt.want {
+				t.Errorf("getEnvOrDefaultFloat(%q=%q, default=%v) = %v, want %v", key, tt.envValue, tt.def, got, tt.want)
+			}
+		})
 	}
 }
 
