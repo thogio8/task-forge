@@ -12,6 +12,10 @@ import (
 	"github.com/google/uuid"
 	kafkago "github.com/segmentio/kafka-go"
 	"github.com/thogio8/task-forge/internal/model"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
 var testLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -251,5 +255,70 @@ func TestConsumer_StopsOnContextCancel(t *testing.T) {
 
 	if !reader.closed {
 		t.Error("expected reader to be closed after stop")
+	}
+}
+
+// TestConsumer_ExtractsTraceparentFromHeaders verifies that the consumer
+// reads the W3C "traceparent" Kafka header and uses it as the parent of the
+// messaging.receive span — without this, the trace cascade breaks at the
+// Kafka boundary and the worker side has its own orphan trace.
+func TestConsumer_ExtractsTraceparentFromHeaders(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	prevTP := otel.GetTracerProvider()
+	otel.SetTracerProvider(tp)
+	t.Cleanup(func() {
+		otel.SetTracerProvider(prevTP)
+		_ = tp.Shutdown(context.Background())
+	})
+
+	prevProp := otel.GetTextMapPropagator()
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	t.Cleanup(func() { otel.SetTextMapPropagator(prevProp) })
+
+	const incomingTraceID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	const incomingSpanID = "bbbbbbbbbbbbbbbb"
+	incomingTraceparent := "00-" + incomingTraceID + "-" + incomingSpanID + "-01"
+
+	taskID := uuid.New()
+	payload, _ := json.Marshal(map[string]string{"task_id": taskID.String()})
+
+	reader := &mockMessageReader{
+		messages: []kafkago.Message{
+			{
+				Key:   []byte(taskID.String()),
+				Value: payload,
+				Headers: []kafkago.Header{
+					{Key: "traceparent", Value: []byte(incomingTraceparent)},
+				},
+			},
+		},
+	}
+
+	task := &model.Task{ID: taskID, Status: "running", Payload: json.RawMessage(`{"type":"echo"}`)}
+	claimer := &mockTaskClaimer{returnTask: task}
+	ch := make(chan model.TaskEnvelope, 10)
+	consumer := NewConsumerWithReader(reader, claimer, ch, "test-worker", testLogger)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go consumer.Run(ctx)
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+	consumer.Stop()
+
+	spans := recorder.Ended()
+	if len(spans) == 0 {
+		t.Fatal("expected at least 1 span (messaging.receive), got 0")
+	}
+
+	var receiveSpan = spans[0]
+	if receiveSpan.Name() != "messaging.receive" {
+		t.Errorf("first span name = %q, want %q", receiveSpan.Name(), "messaging.receive")
+	}
+	if got := receiveSpan.SpanContext().TraceID().String(); got != incomingTraceID {
+		t.Errorf("messaging.receive trace_id = %q, want %q (must inherit from header)", got, incomingTraceID)
+	}
+	if got := receiveSpan.Parent().SpanID().String(); got != incomingSpanID {
+		t.Errorf("messaging.receive parent span_id = %q, want %q (must be the publisher's span)", got, incomingSpanID)
 	}
 }

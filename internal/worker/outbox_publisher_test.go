@@ -10,6 +10,9 @@ import (
 
 	kafkago "github.com/segmentio/kafka-go"
 	"github.com/thogio8/task-forge/internal/model"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
 type mockOutboxRepo struct {
@@ -199,4 +202,68 @@ func TestExtractTaskID_InvalidJSON(t *testing.T) {
 	if id != "" {
 		t.Errorf("expected empty string for invalid JSON, got '%s'", id)
 	}
+}
+
+// TestOutboxPublisher_PropagatesTraceparentToKafka verifies that when an
+// outbox event has a stored trace_context, the publisher rebuilds the trace
+// context and injects a "traceparent" header into the Kafka message — which
+// is the bridge that lets the consumer reattach to the originating HTTP trace.
+func TestOutboxPublisher_PropagatesTraceparentToKafka(t *testing.T) {
+	tp := sdktrace.NewTracerProvider()
+	prevTP := otel.GetTracerProvider()
+	otel.SetTracerProvider(tp)
+	t.Cleanup(func() {
+		otel.SetTracerProvider(prevTP)
+		_ = tp.Shutdown(context.Background())
+	})
+
+	prevProp := otel.GetTextMapPropagator()
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	t.Cleanup(func() { otel.SetTextMapPropagator(prevProp) })
+
+	storedTraceparent := "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+
+	repo := &mockOutboxRepo{
+		events: []model.OutboxEvent{
+			{
+				ID:           1,
+				EventType:    "task.created",
+				Payload:      json.RawMessage(`{"task_id":"abc-123"}`),
+				TraceContext: &storedTraceparent,
+			},
+		},
+	}
+	producer := &mockProducer{}
+	publisher := NewOutboxPublisher(repo, producer, 50*time.Millisecond, 10, time.Hour, "test-worker", testLogger)
+
+	publisher.processCycle(context.Background())
+
+	if len(producer.messages) != 1 {
+		t.Fatalf("expected 1 message published, got %d", len(producer.messages))
+	}
+
+	var traceparent string
+	for _, h := range producer.messages[0].headers {
+		if h.Key == "traceparent" {
+			traceparent = string(h.Value)
+			break
+		}
+	}
+	if traceparent == "" {
+		t.Fatalf("expected traceparent header, got headers=%+v", producer.messages[0].headers)
+	}
+
+	expectedTraceID := "0123456789abcdef0123456789abcdef"
+	if !contains(traceparent, expectedTraceID) {
+		t.Errorf("injected traceparent %q does not carry the stored trace_id %q", traceparent, expectedTraceID)
+	}
+}
+
+func contains(s, substr string) bool {
+	for i := 0; i+len(substr) <= len(s); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }
