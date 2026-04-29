@@ -6,6 +6,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/thogio8/task-forge/internal/model"
 )
 
@@ -205,6 +206,63 @@ func TestDLQ_CountAll_Empty(t *testing.T) {
 
 	if count != 0 {
 		t.Errorf("expected 0 dead letter tasks in empty DLQ, got %d", count)
+	}
+}
+
+func TestDLQ_GetById(t *testing.T) {
+	cleanTasks(t)
+	cleanDeadLetterTasks(t)
+
+	taskRepo := NewTaskRepository(testPool, testLogger)
+	deadLetterTaskRepo := NewDeadLetterRepository(testPool, testLogger)
+
+	task := model.Task{
+		Status:  model.StatusPending,
+		Payload: []byte(`{"type":"echo"}`),
+	}
+	if _, err := taskRepo.Create(context.Background(), &task); err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	claimTestTasks(t, taskRepo, 1)
+	if err := taskRepo.FailTask(context.Background(), task.ID, "boom", nil); err != nil {
+		t.Fatalf("fail task: %v", err)
+	}
+	if err := deadLetterTaskRepo.MoveToDLQ(context.Background(), task.ID); err != nil {
+		t.Fatalf("move to DLQ: %v", err)
+	}
+
+	all, err := deadLetterTaskRepo.GetAll(context.Background())
+	if err != nil {
+		t.Fatalf("GetAll: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("expected 1 DLQ entry, got %d", len(all))
+	}
+	dlqID := all[0].ID
+
+	got, err := deadLetterTaskRepo.GetById(context.Background(), dlqID)
+	if err != nil {
+		t.Fatalf("GetById error: %v", err)
+	}
+	if got.ID != dlqID {
+		t.Errorf("got id %v, want %v", got.ID, dlqID)
+	}
+	if got.OriginalTaskID != task.ID {
+		t.Errorf("OriginalTaskID = %v, want %v", got.OriginalTaskID, task.ID)
+	}
+	if got.LastError != "boom" {
+		t.Errorf("LastError = %q, want %q", got.LastError, "boom")
+	}
+}
+
+func TestDLQ_GetById_NotFound(t *testing.T) {
+	cleanDeadLetterTasks(t)
+
+	deadLetterTaskRepo := NewDeadLetterRepository(testPool, testLogger)
+
+	_, err := deadLetterTaskRepo.GetById(context.Background(), uuid.New())
+	if err == nil {
+		t.Fatal("expected NotFound error for non-existing ID, got nil")
 	}
 }
 

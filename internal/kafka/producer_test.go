@@ -84,6 +84,20 @@ func TestProducer_Publish_Error(t *testing.T) {
 	}
 }
 
+// TestNewProducer_SmokeReturnsClosable ensures the public constructor wires
+// the kafkago.Writer correctly: returns non-nil, Publish and Close are
+// callable. We don't connect to Kafka — Close releases any background
+// goroutines the writer may have started.
+func TestNewProducer_SmokeReturnsClosable(t *testing.T) {
+	p := NewProducer([]string{"localhost:9999"}, "tasks")
+	if p == nil {
+		t.Fatal("NewProducer returned nil")
+	}
+	if err := p.Close(); err != nil {
+		t.Errorf("Close() = %v, want nil on never-used writer", err)
+	}
+}
+
 func TestProducer_Close(t *testing.T) {
 	closed := false
 

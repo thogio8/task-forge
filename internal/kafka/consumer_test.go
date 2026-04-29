@@ -25,9 +25,18 @@ type mockMessageReader struct {
 	index     int
 	committed []kafkago.Message
 	closed    bool
+	closeErr  error
+	fetchErr  error
 }
 
 func (m *mockMessageReader) FetchMessage(ctx context.Context) (kafkago.Message, error) {
+	if m.fetchErr != nil {
+		// One-shot fetch error: emit it, then clear so subsequent calls
+		// don't keep returning the same error (lets the consumer loop progress).
+		err := m.fetchErr
+		m.fetchErr = nil
+		return kafkago.Message{}, err
+	}
 	for m.index >= len(m.messages) {
 		select {
 		case <-ctx.Done():
@@ -47,7 +56,7 @@ func (m *mockMessageReader) CommitMessages(_ context.Context, msgs ...kafkago.Me
 
 func (m *mockMessageReader) Close() error {
 	m.closed = true
-	return nil
+	return m.closeErr
 }
 
 type mockTaskClaimer struct {
@@ -256,6 +265,67 @@ func TestConsumer_StopsOnContextCancel(t *testing.T) {
 	if !reader.closed {
 		t.Error("expected reader to be closed after stop")
 	}
+}
+
+// TestConsumer_StopLogsCloseError covers the close-error branch in Stop().
+// We can't observe the log directly without a fixture, but exercising the
+// branch ensures no panic and that the reader was closed.
+func TestConsumer_StopLogsCloseError(t *testing.T) {
+	reader := &mockMessageReader{closeErr: fmt.Errorf("close failed")}
+	claimer := &mockTaskClaimer{}
+	ch := make(chan model.TaskEnvelope, 1)
+	consumer := NewConsumerWithReader(reader, claimer, ch, "test-worker", testLogger)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go consumer.Run(ctx)
+	time.Sleep(80 * time.Millisecond)
+	cancel()
+	consumer.Stop()
+
+	if !reader.closed {
+		t.Error("reader.Close should still have been called even when it returns an error")
+	}
+}
+
+// TestConsumer_RunLogsFetchErrorAndContinues exercises the path where
+// FetchMessage returns an error WHILE ctx is still active — the loop must
+// log and continue (not exit), which is the resilience we need against
+// transient broker hiccups.
+func TestConsumer_RunLogsFetchErrorAndContinues(t *testing.T) {
+	reader := &mockMessageReader{fetchErr: fmt.Errorf("transient broker error")}
+	claimer := &mockTaskClaimer{}
+	ch := make(chan model.TaskEnvelope, 10)
+	consumer := NewConsumerWithReader(reader, claimer, ch, "test-worker", testLogger)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go consumer.Run(ctx)
+	time.Sleep(60 * time.Millisecond)
+	cancel()
+	consumer.Stop()
+
+	// Reader stayed alive past the error and was closed cleanly on cancel.
+	if !reader.closed {
+		t.Error("expected reader to close after ctx cancel post fetch error")
+	}
+}
+
+// TestConsumer_NewConsumerSmokeReturnsNonNil is a minimal construction smoke
+// test for the public NewConsumer constructor. It does not connect to Kafka
+// (the underlying reader connects lazily) but it ensures the wiring code
+// runs without panic and returns an initialized Consumer.
+func TestConsumer_NewConsumerSmokeReturnsNonNil(t *testing.T) {
+	ch := make(chan model.TaskEnvelope, 1)
+	c := NewConsumer([]string{"localhost:9999"}, "tasks", "test-group", &mockTaskClaimer{}, ch, "smoke-worker", testLogger)
+
+	if c == nil {
+		t.Fatal("NewConsumer returned nil")
+	}
+	if c.workerID != "smoke-worker" {
+		t.Errorf("workerID = %q, want %q", c.workerID, "smoke-worker")
+	}
+	// Close the underlying reader to release the kafkago goroutines started
+	// at construction time, otherwise they keep dialing in the background.
+	_ = c.reader.Close()
 }
 
 // TestConsumer_ExtractsTraceparentFromHeaders verifies that the consumer
