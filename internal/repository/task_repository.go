@@ -43,7 +43,7 @@ func (t *TaskRepository) Create(ctx context.Context, task *model.Task) (created 
 	tx, err := t.pgxPool.Begin(ctx)
 
 	if err != nil {
-		t.logger.Error("failed to start transaction", "error", err)
+		t.logger.ErrorContext(ctx, "failed to start transaction", "error", err)
 		return false, apperror.Internal("failed to start transaction", err)
 	}
 	defer tx.Rollback(ctx)
@@ -59,11 +59,11 @@ func (t *TaskRepository) Create(ctx context.Context, task *model.Task) (created 
 
 		err := row.Scan(&task.ID, &task.CreatedAt, &task.UpdatedAt)
 		if err != nil {
-			t.logger.Error("failed to create task", "error", err)
+			t.logger.ErrorContext(ctx, "failed to create task", "error", err)
 			return false, apperror.Internal("failed to create task", err)
 		}
 
-		t.logger.Info("task created", "task_id", task.ID)
+		t.logger.InfoContext(ctx, "task created", "task_id", task.ID)
 
 		err = t.insertOutboxEvent(ctx, tx, task.ID)
 		if err != nil {
@@ -72,7 +72,7 @@ func (t *TaskRepository) Create(ctx context.Context, task *model.Task) (created 
 
 		err = tx.Commit(ctx)
 		if err != nil {
-			t.logger.Error("failed to commit transaction", "error", err)
+			t.logger.ErrorContext(ctx, "failed to commit transaction", "error", err)
 			return false, apperror.Internal("failed to commit transaction", err)
 		}
 
@@ -109,7 +109,7 @@ func (t *TaskRepository) Create(ctx context.Context, task *model.Task) (created 
 			return false, nil
 		}
 
-		t.logger.Error("failed to create task", "error", err)
+		t.logger.ErrorContext(ctx, "failed to create task", "error", err)
 		return false, apperror.Internal("failed to create task", err)
 	}
 
@@ -120,7 +120,7 @@ func (t *TaskRepository) Create(ctx context.Context, task *model.Task) (created 
 
 	err = tx.Commit(ctx)
 	if err != nil {
-		t.logger.Error("failed to commit transaction", "error", err)
+		t.logger.ErrorContext(ctx, "failed to commit transaction", "error", err)
 		return false, apperror.Internal("failed to commit transaction", err)
 	}
 
@@ -140,7 +140,7 @@ func (t *TaskRepository) GetAll(ctx context.Context) (tasks []model.Task, err er
 	rows, err := t.pgxPool.Query(ctx, query)
 
 	if err != nil {
-		t.logger.Error("failed to query tasks", "error", err)
+		t.logger.ErrorContext(ctx, "failed to query tasks", "error", err)
 		return nil, apperror.Internal("failed to query tasks", err)
 	}
 	defer rows.Close()
@@ -149,18 +149,18 @@ func (t *TaskRepository) GetAll(ctx context.Context) (tasks []model.Task, err er
 		task, err := scanTask(rows)
 
 		if err != nil {
-			t.logger.Error("failed to scan task row", "error", err)
+			t.logger.ErrorContext(ctx, "failed to scan task row", "error", err)
 			return nil, apperror.Internal("failed to scan task row", err)
 		}
 		tasks = append(tasks, task)
 	}
 
 	if err := rows.Err(); err != nil {
-		t.logger.Error("failed to iterate task rows", "error", err)
+		t.logger.ErrorContext(ctx, "failed to iterate task rows", "error", err)
 		return nil, apperror.Internal("failed to iterate task rows", err)
 	}
 
-	t.logger.Info("all tasks fetched", "count", len(tasks))
+	t.logger.InfoContext(ctx, "all tasks fetched", "count", len(tasks))
 	span.SetAttributes(attribute.Int("task.count", len(tasks)))
 	return tasks, nil
 }
@@ -185,15 +185,15 @@ func (t *TaskRepository) GetById(ctx context.Context, id uuid.UUID) (task model.
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			t.logger.Warn("task not found", "task_id", task.ID)
+			t.logger.WarnContext(ctx, "task not found", "task_id", task.ID)
 			return model.Task{}, apperror.NotFound("task not found", err)
 		}
 
-		t.logger.Error("failed to scan task", "error", err)
+		t.logger.ErrorContext(ctx, "failed to scan task", "error", err)
 		return model.Task{}, apperror.Internal("failed to scan task", err)
 	}
 
-	t.logger.Info("task fetched", "task_id", task.ID)
+	t.logger.InfoContext(ctx, "task fetched", "task_id", task.ID)
 	return task, nil
 }
 
@@ -210,16 +210,16 @@ func (t *TaskRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status 
 	results, err := t.pgxPool.Exec(ctx, query, status, id)
 
 	if err != nil {
-		t.logger.Error("failed to update task", "error", err)
+		t.logger.ErrorContext(ctx, "failed to update task", "error", err)
 		return apperror.Internal("failed to update task", err)
 	}
 
 	if results.RowsAffected() == 0 {
-		t.logger.Warn("task not found", "task_id", id)
+		t.logger.WarnContext(ctx, "task not found", "task_id", id)
 		return apperror.NotFound("task not found", nil)
 	}
 
-	t.logger.Info("task updated", "task_id", id, "new_status", status)
+	t.logger.InfoContext(ctx, "task updated", "task_id", id, "new_status", status)
 	return nil
 }
 
@@ -234,7 +234,7 @@ func (t *TaskRepository) ClaimTasks(ctx context.Context, workerID string, limit 
 	tx, err := t.pgxPool.Begin(ctx)
 
 	if err != nil {
-		t.logger.Error("failed to begin transaction", "error", err)
+		t.logger.ErrorContext(ctx, "failed to begin transaction", "error", err)
 		return nil, apperror.Internal("failed to begin transaction", err)
 	}
 	defer tx.Rollback(ctx)
@@ -254,7 +254,7 @@ func (t *TaskRepository) ClaimTasks(ctx context.Context, workerID string, limit 
 	rows, err := tx.Query(ctx, selectQuery, limit)
 
 	if err != nil {
-		t.logger.Error("failed to fetch claimable tasks", "error", err)
+		t.logger.ErrorContext(ctx, "failed to fetch claimable tasks", "error", err)
 		return nil, apperror.Internal("failed to fetch claimable tasks", err)
 	}
 	defer rows.Close()
@@ -265,7 +265,7 @@ func (t *TaskRepository) ClaimTasks(ctx context.Context, workerID string, limit 
 		task, scanErr := scanTask(rows)
 
 		if scanErr != nil {
-			t.logger.Error("failed to scan claimable task", "error", scanErr)
+			t.logger.ErrorContext(ctx, "failed to scan claimable task", "error", scanErr)
 			return nil, apperror.Internal("failed to scan claimable task", scanErr)
 		}
 
@@ -274,7 +274,7 @@ func (t *TaskRepository) ClaimTasks(ctx context.Context, workerID string, limit 
 	}
 
 	if err := rows.Err(); err != nil {
-		t.logger.Error("failed to iterate claimable tasks", "error", err)
+		t.logger.ErrorContext(ctx, "failed to iterate claimable tasks", "error", err)
 		return nil, apperror.Internal("failed to iterate claimable tasks", err)
 	}
 
@@ -287,14 +287,14 @@ func (t *TaskRepository) ClaimTasks(ctx context.Context, workerID string, limit 
 	_, err = tx.Exec(ctx, updateQuery, workerID, ids)
 
 	if err != nil {
-		t.logger.Error("failed to claim tasks", "error", err)
+		t.logger.ErrorContext(ctx, "failed to claim tasks", "error", err)
 		return nil, apperror.Internal("failed to claim tasks", err)
 	}
 
 	err = tx.Commit(ctx)
 
 	if err != nil {
-		t.logger.Error("failed to commit claim transaction", "error", err)
+		t.logger.ErrorContext(ctx, "failed to commit claim transaction", "error", err)
 		return nil, apperror.Internal("failed to commit claim transaction", err)
 	}
 
@@ -328,12 +328,12 @@ func (t *TaskRepository) ClaimTask(ctx context.Context, workerID string, taskID 
 		if errors.Is(scanErr, pgx.ErrNoRows) {
 			return nil, nil
 		}
-		t.logger.Error("failed to claim task", "task_id", taskID, "error", scanErr)
+		t.logger.ErrorContext(ctx, "failed to claim task", "task_id", taskID, "error", scanErr)
 		err = apperror.Internal("failed to claim task", scanErr)
 		return nil, err
 	}
 
-	t.logger.Info("task claimed via event", "task_id", taskID, "worker_id", workerID)
+	t.logger.InfoContext(ctx, "task claimed via event", "task_id", taskID, "worker_id", workerID)
 	return &scanned, nil
 }
 
@@ -349,12 +349,12 @@ func (t *TaskRepository) CompleteTask(ctx context.Context, id uuid.UUID) (err er
 	results, err := t.pgxPool.Exec(ctx, query, id)
 
 	if err != nil {
-		t.logger.Error("failed to mark task as completed", "task_id", id, "error", err)
+		t.logger.ErrorContext(ctx, "failed to mark task as completed", "task_id", id, "error", err)
 		return apperror.Internal("failed to mark task as completed", err)
 	}
 
 	if results.RowsAffected() == 0 {
-		t.logger.Warn("task not found", "task_id", id)
+		t.logger.WarnContext(ctx, "task not found", "task_id", id)
 		return apperror.NotFound("task not found", nil)
 	}
 
@@ -381,12 +381,12 @@ func (t *TaskRepository) FailTask(ctx context.Context, id uuid.UUID, errMsg stri
 		results, err := t.pgxPool.Exec(ctx, query, errMsg, nextRetryAt, id)
 
 		if err != nil {
-			t.logger.Error("failed to mark task as pending", "task_id", id, "error", err)
+			t.logger.ErrorContext(ctx, "failed to mark task as pending", "task_id", id, "error", err)
 			return apperror.Internal("failed to mark task as pending", err)
 		}
 
 		if results.RowsAffected() == 0 {
-			t.logger.Warn("task not found", "task_id", id)
+			t.logger.WarnContext(ctx, "task not found", "task_id", id)
 			return apperror.NotFound("task not found", nil)
 		}
 
@@ -401,12 +401,12 @@ func (t *TaskRepository) FailTask(ctx context.Context, id uuid.UUID, errMsg stri
 		results, err := t.pgxPool.Exec(ctx, query, errMsg, id)
 
 		if err != nil {
-			t.logger.Error("failed to mark task as failed", "task_id", id, "error", err)
+			t.logger.ErrorContext(ctx, "failed to mark task as failed", "task_id", id, "error", err)
 			return apperror.Internal("failed to mark task as failed", err)
 		}
 
 		if results.RowsAffected() == 0 {
-			t.logger.Warn("task not found", "task_id", id)
+			t.logger.WarnContext(ctx, "task not found", "task_id", id)
 			return apperror.NotFound("task not found", nil)
 		}
 
@@ -426,7 +426,7 @@ func (t *TaskRepository) UnlockStaleTasks(ctx context.Context, staleDuration tim
 	results, err := t.pgxPool.Exec(ctx, query, staleDuration)
 
 	if err != nil {
-		t.logger.Error("failed to unlock stale tasks", "error", err)
+		t.logger.ErrorContext(ctx, "failed to unlock stale tasks", "error", err)
 		return 0, apperror.Internal("failed to unlock stale tasks", err)
 	}
 
@@ -446,7 +446,7 @@ func (t *TaskRepository) RecoverTasksByInstance(ctx context.Context, instanceID 
 	results, err := t.pgxPool.Exec(ctx, query, instanceID)
 
 	if err != nil {
-		t.logger.Error("failed to recover tasks", "error", err)
+		t.logger.ErrorContext(ctx, "failed to recover tasks", "error", err)
 		return 0, apperror.Internal("failed to recover tasks", err)
 	}
 
@@ -481,7 +481,7 @@ func (t *TaskRepository) insertOutboxEvent(ctx context.Context, tx pgx.Tx, taskI
 	_, err := tx.Exec(ctx, query, eventType, payload, traceContext)
 
 	if err != nil {
-		t.logger.Error("failed to insert outbox event", "error", err)
+		t.logger.ErrorContext(ctx, "failed to insert outbox event", "error", err)
 		return apperror.Internal("failed to insert outbox event", err)
 	}
 

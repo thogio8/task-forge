@@ -40,7 +40,7 @@ func (o *OutboxRepository) GetUnpublished(ctx context.Context, limit int) (outbo
 	rows, err := o.pgxPool.Query(ctx, query, limit)
 
 	if err != nil {
-		o.logger.Error("failed to get outbox events", "error", err)
+		o.logger.ErrorContext(ctx, "failed to get outbox events", "error", err)
 		return nil, apperror.Internal("failed to get outbox events", err)
 	}
 	defer rows.Close()
@@ -49,18 +49,18 @@ func (o *OutboxRepository) GetUnpublished(ctx context.Context, limit int) (outbo
 		outboxEvent, scanErr := scanOutbox(rows)
 
 		if scanErr != nil {
-			o.logger.Error("failed to scan outbox event row", "error", scanErr)
+			o.logger.ErrorContext(ctx, "failed to scan outbox event row", "error", scanErr)
 			return nil, apperror.Internal("failed to scan outbox event row", scanErr)
 		}
 		outboxEvents = append(outboxEvents, outboxEvent)
 	}
 
 	if err = rows.Err(); err != nil {
-		o.logger.Error("failed to iterate outbox event rows", "error", err)
+		o.logger.ErrorContext(ctx, "failed to iterate outbox event rows", "error", err)
 		return nil, apperror.Internal("failed to iterate outbox event rows", err)
 	}
 
-	o.logger.Debug("unpublished outbox events fetched", "count", len(outboxEvents))
+	o.logger.DebugContext(ctx, "unpublished outbox events fetched", "count", len(outboxEvents))
 	span.SetAttributes(attribute.Int("fetched.count", len(outboxEvents)))
 	return outboxEvents, nil
 }
@@ -81,12 +81,12 @@ func (o *OutboxRepository) MarkPublished(ctx context.Context, ids []int64) (err 
 	results, err := o.pgxPool.Exec(ctx, query, ids)
 
 	if err != nil {
-		o.logger.Error("failed to mark outbox events as published", "error", err)
+		o.logger.ErrorContext(ctx, "failed to mark outbox events as published", "error", err)
 		return apperror.Internal("failed to mark outbox events as published", err)
 	}
 
 	if results.RowsAffected() > 0 {
-		o.logger.Debug("marked outbox events as published", "count", results.RowsAffected())
+		o.logger.DebugContext(ctx, "marked outbox events as published", "count", results.RowsAffected())
 	}
 
 	return nil
@@ -99,7 +99,7 @@ func (o *OutboxRepository) CountUnpublished(ctx context.Context) (int64, error) 
 	err := o.pgxPool.QueryRow(ctx, query).Scan(&count)
 
 	if err != nil {
-		o.logger.Error("failed to count unpublished outbox events", "error", err)
+		o.logger.ErrorContext(ctx, "failed to count unpublished outbox events", "error", err)
 		return 0, apperror.Internal("failed to count unpublished outbox events", err)
 	}
 
@@ -116,12 +116,12 @@ func (o *OutboxRepository) Purge(ctx context.Context, retention time.Duration) e
 	results, err := o.pgxPool.Exec(ctx, query, retention)
 
 	if err != nil {
-		o.logger.Error("failed to purge outbox events", "error", err)
+		o.logger.ErrorContext(ctx, "failed to purge outbox events", "error", err)
 		return apperror.Internal("failed to purge outbox events", err)
 	}
 
 	if results.RowsAffected() > 0 {
-		o.logger.Debug("purged outbox events", "count", results.RowsAffected())
+		o.logger.DebugContext(ctx, "purged outbox events", "count", results.RowsAffected())
 	}
 
 	return nil

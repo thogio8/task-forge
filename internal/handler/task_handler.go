@@ -76,7 +76,7 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 	var req CreateTaskRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.logger.Warn("invalid request body", "error", err)
+		h.logger.WarnContext(r.Context(), "invalid request body", "error", err)
 		Error(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
@@ -156,7 +156,7 @@ func (h *TaskHandler) UpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 	var req UpdateStatusRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.logger.Warn("invalid request body", "error", err)
+		h.logger.WarnContext(r.Context(), "invalid request body", "error", err)
 		Error(w, http.StatusBadRequest, "invalid request body")
 		return
 	}

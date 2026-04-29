@@ -105,9 +105,9 @@ func (e *Executor) Execute(ctx context.Context, task model.Task) {
 	if payloadErr != nil {
 		span.RecordError(payloadErr)
 		span.SetStatus(codes.Error, "invalid payload")
-		e.logger.Error("invalid payload", "task_id", task.ID, "error", payloadErr)
+		e.logger.ErrorContext(ctx, "invalid payload", "task_id", task.ID, "error", payloadErr)
 		if failErr := e.repo.FailTask(ctx, task.ID, "invalid payload: "+payloadErr.Error(), nil); failErr != nil {
-			e.logger.Error("failed to fail task with invalid payload", "task_id", task.ID, "error", failErr)
+			e.logger.ErrorContext(ctx, "failed to fail task with invalid payload", "task_id", task.ID, "error", failErr)
 		}
 		e.failedCounter.Add(ctx, 1, metric.WithAttributes(
 			attribute.String("task_type", "unknown"),
@@ -118,9 +118,9 @@ func (e *Executor) Execute(ctx context.Context, task model.Task) {
 
 	if payload.Type == "" {
 		span.SetStatus(codes.Error, "missing task type")
-		e.logger.Error("missing task type in payload", "task_id", task.ID)
+		e.logger.ErrorContext(ctx, "missing task type in payload", "task_id", task.ID)
 		if failErr := e.repo.FailTask(ctx, task.ID, "missing task type in payload", nil); failErr != nil {
-			e.logger.Error("failed to fail task with missing type", "task_id", task.ID, "error", failErr)
+			e.logger.ErrorContext(ctx, "failed to fail task with missing type", "task_id", task.ID, "error", failErr)
 		}
 		e.failedCounter.Add(ctx, 1, metric.WithAttributes(
 			attribute.String("task_type", "unknown"),
@@ -133,9 +133,9 @@ func (e *Executor) Execute(ctx context.Context, task model.Task) {
 
 	if !exists {
 		span.SetStatus(codes.Error, "unknown task type")
-		e.logger.Error("unknown task type", "task_id", task.ID, "type", payload.Type)
+		e.logger.ErrorContext(ctx, "unknown task type", "task_id", task.ID, "type", payload.Type)
 		if failErr := e.repo.FailTask(ctx, task.ID, "unknown task type: "+payload.Type, nil); failErr != nil {
-			e.logger.Error("failed to fail task with unknown type", "task_id", task.ID, "error", failErr)
+			e.logger.ErrorContext(ctx, "failed to fail task with unknown type", "task_id", task.ID, "error", failErr)
 		}
 		e.failedCounter.Add(ctx, 1, metric.WithAttributes(
 			attribute.String("task_type", "unknown"),
@@ -144,7 +144,7 @@ func (e *Executor) Execute(ctx context.Context, task model.Task) {
 		return
 	}
 
-	e.logger.Info("executing task", "task_id", task.ID, "type", payload.Type)
+	e.logger.InfoContext(ctx, "executing task", "task_id", task.ID, "type", payload.Type)
 
 	handlerCtx, cancel := context.WithTimeout(ctx, e.taskTimeout)
 	defer cancel()
@@ -170,9 +170,9 @@ func (e *Executor) Execute(ctx context.Context, task model.Task) {
 			failErr := e.repo.FailTask(ctx, task.ID, err.Error(), &nextRetryAt)
 
 			if failErr != nil {
-				e.logger.Error("failed to mark task as pending", "task_id", task.ID, "error", failErr)
+				e.logger.ErrorContext(ctx, "failed to mark task as pending", "task_id", task.ID, "error", failErr)
 			} else {
-				e.logger.Warn("task failed, scheduling retry", "task_id", task.ID, "attempt", task.AttemptCount+1, "next_retry", nextRetryAt)
+				e.logger.WarnContext(ctx, "task failed, scheduling retry", "task_id", task.ID, "attempt", task.AttemptCount+1, "next_retry", nextRetryAt)
 				span.SetAttributes(attribute.String("task.outcome", "retry_scheduled"))
 				e.retriedCounter.Add(ctx, 1, metric.WithAttributes(
 					attribute.String("task_type", payload.Type),
@@ -183,9 +183,9 @@ func (e *Executor) Execute(ctx context.Context, task model.Task) {
 			moveErr := e.dlqRepo.MoveToDLQ(ctx, task.ID)
 
 			if moveErr != nil {
-				e.logger.Error("failed to move task to DLQ", "task_id", task.ID, "error", moveErr)
+				e.logger.ErrorContext(ctx, "failed to move task to DLQ", "task_id", task.ID, "error", moveErr)
 			} else {
-				e.logger.Error("task permanently failed, moved to DLQ", "task_id", task.ID, "attempt", task.AttemptCount+1)
+				e.logger.ErrorContext(ctx, "task permanently failed, moved to DLQ", "task_id", task.ID, "attempt", task.AttemptCount+1)
 				span.SetAttributes(attribute.String("task.outcome", "dlq"))
 				e.failedCounter.Add(ctx, 1, metric.WithAttributes(
 					attribute.String("task_type", payload.Type),
@@ -200,11 +200,11 @@ func (e *Executor) Execute(ctx context.Context, task model.Task) {
 	completeErr := e.repo.CompleteTask(ctx, task.ID)
 	if completeErr != nil {
 		telemetry.SpanError(span, completeErr)
-		e.logger.Error("failed to mark task as completed", "task_id", task.ID, "error", completeErr)
+		e.logger.ErrorContext(ctx, "failed to mark task as completed", "task_id", task.ID, "error", completeErr)
 		return
 	}
 
-	e.logger.Info("task completed", "task_id", task.ID)
+	e.logger.InfoContext(ctx, "task completed", "task_id", task.ID)
 	span.SetAttributes(attribute.String("task.outcome", "completed"))
 	e.completedCounter.Add(ctx, 1, metric.WithAttributes(
 		attribute.String("task_type", payload.Type),

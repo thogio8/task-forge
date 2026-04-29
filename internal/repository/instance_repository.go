@@ -30,11 +30,11 @@ func (i *InstanceRepository) Register(ctx context.Context, instanceID string) er
 	_, err := i.pgxPool.Exec(ctx, query, instanceID)
 
 	if err != nil {
-		i.logger.Error("failed to create instance", "instance_id", instanceID, "error", err)
+		i.logger.ErrorContext(ctx, "failed to create instance", "instance_id", instanceID, "error", err)
 		return apperror.Internal("failed to create instance", err)
 	}
 
-	i.logger.Info("instance registered", "instance_id", instanceID)
+	i.logger.InfoContext(ctx, "instance registered", "instance_id", instanceID)
 	return nil
 }
 
@@ -48,16 +48,16 @@ func (i *InstanceRepository) Heartbeat(ctx context.Context, instanceID string) e
 	results, err := i.pgxPool.Exec(ctx, query, instanceID)
 
 	if err != nil {
-		i.logger.Error("failed to update heartbeat", "instance_id", instanceID, "error", err)
+		i.logger.ErrorContext(ctx, "failed to update heartbeat", "instance_id", instanceID, "error", err)
 		return apperror.Internal("failed to update heartbeat", err)
 	}
 
 	if results.RowsAffected() == 0 {
-		i.logger.Warn("instance not found", "instance_id", instanceID)
+		i.logger.WarnContext(ctx, "instance not found", "instance_id", instanceID)
 		return apperror.NotFound("instance not found", nil)
 	}
 
-	i.logger.Debug("instance updated", "instance_id", instanceID)
+	i.logger.DebugContext(ctx, "instance updated", "instance_id", instanceID)
 	return nil
 }
 
@@ -70,7 +70,7 @@ func (i *InstanceRepository) GetStaleInstances(ctx context.Context, timeout time
 
 	rows, err := i.pgxPool.Query(ctx, query, timeout)
 	if err != nil {
-		i.logger.Error("failed to get stale instances", "error", err)
+		i.logger.ErrorContext(ctx, "failed to get stale instances", "error", err)
 		return nil, apperror.Internal("failed to get stale instances", err)
 	}
 	defer rows.Close()
@@ -81,18 +81,18 @@ func (i *InstanceRepository) GetStaleInstances(ctx context.Context, timeout time
 		instance, err := scanInstance(rows)
 
 		if err != nil {
-			i.logger.Error("failed to scan stale instance row", "error", err)
+			i.logger.ErrorContext(ctx, "failed to scan stale instance row", "error", err)
 			return nil, apperror.Internal("failed to scan stale instance row", err)
 		}
 		instances = append(instances, instance)
 	}
 
 	if err := rows.Err(); err != nil {
-		i.logger.Error("failed to iterate stale instance rows", "error", err)
+		i.logger.ErrorContext(ctx, "failed to iterate stale instance rows", "error", err)
 		return nil, apperror.Internal("failed to iterate stale instance rows", err)
 	}
 
-	i.logger.Info("all stale instances fetched", "count", len(instances))
+	i.logger.InfoContext(ctx, "all stale instances fetched", "count", len(instances))
 	return instances, nil
 }
 
@@ -105,11 +105,11 @@ func (i *InstanceRepository) Deregister(ctx context.Context, instanceID string) 
 	_, err := i.pgxPool.Exec(ctx, query, instanceID)
 
 	if err != nil {
-		i.logger.Error("failed to deregister instance", "instance_id", instanceID, "error", err)
+		i.logger.ErrorContext(ctx, "failed to deregister instance", "instance_id", instanceID, "error", err)
 		return apperror.Internal("failed to deregister instance", err)
 	}
 
-	i.logger.Info("instance deregistered", "instance_id", instanceID)
+	i.logger.InfoContext(ctx, "instance deregistered", "instance_id", instanceID)
 	return nil
 }
 
@@ -121,7 +121,7 @@ func (i *InstanceRepository) TryAcquireLeader(ctx context.Context) (bool, error)
 	conn, err := i.pgxPool.Acquire(ctx)
 
 	if err != nil {
-		i.logger.Error("failed to acquire leader connection", "error", err)
+		i.logger.ErrorContext(ctx, "failed to acquire leader connection", "error", err)
 		return false, apperror.Internal("failed to acquire leader connection", err)
 	}
 
@@ -134,7 +134,7 @@ func (i *InstanceRepository) TryAcquireLeader(ctx context.Context) (bool, error)
 
 	if err != nil {
 		conn.Release()
-		i.logger.Error("failed to acquire leader connection", "error", err)
+		i.logger.ErrorContext(ctx, "failed to acquire leader connection", "error", err)
 		return false, apperror.Internal("failed to acquire leader connection", err)
 	}
 
@@ -166,7 +166,7 @@ func (i *InstanceRepository) ReleaseLeader(ctx context.Context) (bool, error) {
 	err := conn.QueryRow(ctx, query, i.lockKey).Scan(&released)
 
 	if err != nil {
-		i.logger.Error("failed to release leader connection", "error", err)
+		i.logger.ErrorContext(ctx, "failed to release leader connection", "error", err)
 		return false, apperror.Internal("failed to release leader connection", err)
 	}
 

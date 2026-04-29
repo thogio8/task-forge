@@ -28,7 +28,7 @@ func StartInstanceMonitor(ctx context.Context, instanceRepo InstanceMonitorRepos
 				staleInstances, err := instanceRepo.GetStaleInstances(ctx, heartbeatTimeout)
 
 				if err != nil {
-					logger.Error("failed to get stale instances", "error", err)
+					logger.ErrorContext(ctx, "failed to get stale instances", "error", err)
 					continue
 				}
 
@@ -36,17 +36,17 @@ func StartInstanceMonitor(ctx context.Context, instanceRepo InstanceMonitorRepos
 					recovered, err := taskRepo.RecoverTasksByInstance(ctx, instance.ID)
 
 					if err != nil {
-						logger.Error("failed to recover tasks", "instance_id", instance.ID, "error", err)
+						logger.ErrorContext(ctx, "failed to recover tasks", "instance_id", instance.ID, "error", err)
 						continue
 					}
 
 					err = instanceRepo.Deregister(ctx, instance.ID)
 					if err != nil {
-						logger.Error("failed to deregister instance", "instance_id", instance.ID, "error", err)
+						logger.ErrorContext(ctx, "failed to deregister instance", "instance_id", instance.ID, "error", err)
 						continue
 					}
 
-					logger.Warn("dead instance detected", "instance_id", instance.ID, "tasks_recovered", recovered)
+					logger.WarnContext(ctx, "dead instance detected", "instance_id", instance.ID, "tasks_recovered", recovered)
 				}
 			case <-ctx.Done():
 				return

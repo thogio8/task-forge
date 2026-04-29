@@ -20,7 +20,7 @@ func StartHeartbeat(ctx context.Context, repo HeartbeatRepository, instanceID st
 			case <-ticker.C:
 				err := repo.Heartbeat(ctx, instanceID)
 				if err != nil {
-					logger.Error("failed to send heartbeat", "instance_id", instanceID, "error", err)
+					logger.ErrorContext(ctx, "failed to send heartbeat", "instance_id", instanceID, "error", err)
 				}
 			case <-ctx.Done():
 				return

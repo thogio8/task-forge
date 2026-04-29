@@ -49,7 +49,7 @@ func NewOutboxPublisher(repo OutboxPublisherRepository, producer OutboxProducer,
 		metric.WithInt64Callback(func(ctx context.Context, o metric.Int64Observer) error {
 			count, err := repo.CountUnpublished(ctx)
 			if err != nil {
-				logger.Warn("failed to observe outbox.pending", "error", err)
+				logger.WarnContext(ctx, "failed to observe outbox.pending", "error", err)
 				return nil
 			}
 			o.Observe(count)
@@ -90,7 +90,7 @@ func NewOutboxPublisher(repo OutboxPublisherRepository, producer OutboxProducer,
 }
 
 func (o *OutboxPublisher) Run(ctx context.Context) {
-	o.logger.Info("outbox publisher started", "worker_id", o.workerID)
+	o.logger.InfoContext(ctx, "outbox publisher started", "worker_id", o.workerID)
 
 	ticker := time.NewTicker(o.pollInterval)
 	defer ticker.Stop()
@@ -101,7 +101,7 @@ func (o *OutboxPublisher) Run(ctx context.Context) {
 			o.processCycle(ctx)
 		case <-ctx.Done():
 			close(o.done)
-			o.logger.Info("outbox publisher stopped", "worker_id", o.workerID)
+			o.logger.InfoContext(ctx, "outbox publisher stopped", "worker_id", o.workerID)
 			return
 		}
 	}
@@ -117,7 +117,7 @@ func (o *OutboxPublisher) processCycle(ctx context.Context) {
 
 	if err != nil {
 		telemetry.SpanError(cycleSpan, err)
-		o.logger.Error("failed to retrieve unpublished outbox events", "worker_id", o.workerID, "error", err)
+		o.logger.ErrorContext(cycleCtx, "failed to retrieve unpublished outbox events", "worker_id", o.workerID, "error", err)
 		return
 	}
 
@@ -132,13 +132,13 @@ func (o *OutboxPublisher) processCycle(ctx context.Context) {
 	if len(outboxEventsIDs) > 0 {
 		if err := o.repo.MarkPublished(cycleCtx, outboxEventsIDs); err != nil {
 			telemetry.SpanError(cycleSpan, err)
-			o.logger.Error("failed to mark outbox events as published", "worker_id", o.workerID, "error", err)
+			o.logger.ErrorContext(cycleCtx, "failed to mark outbox events as published", "worker_id", o.workerID, "error", err)
 			return
 		}
 	}
 
 	if err := o.repo.Purge(cycleCtx, o.retention); err != nil {
-		o.logger.Error("failed to purge outbox events", "worker_id", o.workerID, "error", err)
+		o.logger.ErrorContext(cycleCtx, "failed to purge outbox events", "worker_id", o.workerID, "error", err)
 	}
 }
 
@@ -164,7 +164,7 @@ func (o *OutboxPublisher) publishEvent(rootCtx context.Context, event model.Outb
 
 	taskID, extractErr := extractTaskID(event.Payload)
 	if extractErr != nil {
-		o.logger.Warn("failed to extract task_id from outbox payload", "worker_id", o.workerID, "outbox_event_id", event.ID, "error", extractErr)
+		o.logger.WarnContext(publishCtx, "failed to extract task_id from outbox payload", "worker_id", o.workerID, "outbox_event_id", event.ID, "error", extractErr)
 	}
 
 	start := time.Now()
@@ -173,7 +173,7 @@ func (o *OutboxPublisher) publishEvent(rootCtx context.Context, event model.Outb
 
 	if err != nil {
 		telemetry.SpanError(span, err)
-		o.logger.Error("failed to publish outbox event", "worker_id", o.workerID, "outbox_event_id", event.ID, "error", err)
+		o.logger.ErrorContext(publishCtx, "failed to publish outbox event", "worker_id", o.workerID, "outbox_event_id", event.ID, "error", err)
 		o.errorsCounter.Add(publishCtx, 1)
 		return
 	}

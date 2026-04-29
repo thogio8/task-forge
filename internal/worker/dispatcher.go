@@ -64,7 +64,7 @@ func NewDispatcher(repo DispatcherRepository, tasks chan<- model.TaskEnvelope, p
 }
 
 func (d *Dispatcher) Run(ctx context.Context) {
-	d.logger.Info("dispatcher started", "worker_id", d.workerID)
+	d.logger.InfoContext(ctx, "dispatcher started", "worker_id", d.workerID)
 
 	ticker := time.NewTicker(d.pollInterval)
 	defer ticker.Stop()
@@ -75,7 +75,7 @@ func (d *Dispatcher) Run(ctx context.Context) {
 			d.runCycle(ctx)
 		case <-ctx.Done():
 			close(d.done)
-			d.logger.Info("dispatcher stopped")
+			d.logger.InfoContext(ctx, "dispatcher stopped")
 			return
 		}
 	}
@@ -95,7 +95,7 @@ func (d *Dispatcher) runCycle(ctx context.Context) {
 
 	if err != nil {
 		telemetry.SpanError(span, err)
-		d.logger.Error("failed to claim tasks", "error", err)
+		d.logger.ErrorContext(cycleCtx, "failed to claim tasks", "error", err)
 		return
 	}
 
@@ -103,7 +103,7 @@ func (d *Dispatcher) runCycle(ctx context.Context) {
 
 	if len(tasks) > 0 {
 		d.claimedCounter.Add(cycleCtx, int64(len(tasks)))
-		d.logger.Info("tasks claimed", "count", len(tasks))
+		d.logger.InfoContext(cycleCtx, "tasks claimed", "count", len(tasks))
 	}
 
 	for _, task := range tasks {

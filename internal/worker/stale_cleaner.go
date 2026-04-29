@@ -20,10 +20,10 @@ func StartStaleCleaner(ctx context.Context, repo StaleCleanerRepository, interva
 			case <-ticker.C:
 				count, err := repo.UnlockStaleTasks(ctx, duration)
 				if err != nil {
-					logger.Error("failed to unlock stale tasks", "error", err)
+					logger.ErrorContext(ctx, "failed to unlock stale tasks", "error", err)
 				}
 				if count > 0 {
-					logger.Info("unlocked stale tasks", "count", count)
+					logger.InfoContext(ctx, "unlocked stale tasks", "count", count)
 				}
 			case <-ctx.Done():
 				return

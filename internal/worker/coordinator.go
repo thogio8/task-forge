@@ -62,13 +62,13 @@ func (c *Coordinator) Start(ctx context.Context) {
 			case <-ticker.C:
 				acquired, err := c.leaderRepo.TryAcquireLeader(ctx)
 				if err != nil {
-					c.logger.Error("failed to acquire leader", "error", err)
+					c.logger.ErrorContext(ctx, "failed to acquire leader", "error", err)
 					continue
 				}
 
 				if acquired && !c.isLeader {
 					c.isLeader = true
-					c.logger.Info("acquired leadership")
+					c.logger.InfoContext(ctx, "acquired leadership")
 
 					leaderCtx, cancel := context.WithCancel(ctx)
 					c.leaderCancel = cancel
@@ -80,7 +80,7 @@ func (c *Coordinator) Start(ctx context.Context) {
 				if !acquired && c.isLeader {
 					c.isLeader = false
 					c.leaderCancel()
-					c.logger.Info("lost leadership")
+					c.logger.InfoContext(ctx, "lost leadership")
 				}
 			case <-ctx.Done():
 				return

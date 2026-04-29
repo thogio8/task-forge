@@ -29,7 +29,7 @@ func NewDeadLetterRepository(pool *pgxpool.Pool, logger *slog.Logger) *DeadLette
 		metric.WithInt64Callback(func(ctx context.Context, o metric.Int64Observer) error {
 			count, err := repo.CountAll(ctx)
 			if err != nil {
-				logger.Warn("failed to observe dlq.size", "error", err)
+				logger.WarnContext(ctx, "failed to observe dlq.size", "error", err)
 				return nil
 			}
 			o.Observe(count)
@@ -47,7 +47,7 @@ func (d *DeadLetterTaskRepository) CountAll(ctx context.Context) (int64, error) 
 	err := d.pgxPool.QueryRow(ctx, query).Scan(&count)
 
 	if err != nil {
-		d.logger.Error("failed to count dead letter tasks", "error", err)
+		d.logger.ErrorContext(ctx, "failed to count dead letter tasks", "error", err)
 		return 0, apperror.Internal("failed to count dead letter tasks", err)
 	}
 
@@ -58,7 +58,7 @@ func (d *DeadLetterTaskRepository) MoveToDLQ(ctx context.Context, taskID uuid.UU
 	tx, err := d.pgxPool.Begin(ctx)
 
 	if err != nil {
-		d.logger.Error("failed to begin transaction", "error", err)
+		d.logger.ErrorContext(ctx, "failed to begin transaction", "error", err)
 		return apperror.Internal("failed to begin transaction", err)
 	}
 
@@ -76,11 +76,11 @@ func (d *DeadLetterTaskRepository) MoveToDLQ(ctx context.Context, taskID uuid.UU
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			d.logger.Warn("task not found", "task_id", taskID)
+			d.logger.WarnContext(ctx, "task not found", "task_id", taskID)
 			return apperror.NotFound("task not found", err)
 		}
 
-		d.logger.Error("failed to scan task", "error", err)
+		d.logger.ErrorContext(ctx, "failed to scan task", "error", err)
 		return apperror.Internal("failed to scan task", err)
 	}
 
@@ -92,7 +92,7 @@ func (d *DeadLetterTaskRepository) MoveToDLQ(ctx context.Context, taskID uuid.UU
 	_, err = tx.Exec(ctx, insertQuery, task.ID, task.Payload, task.LastError, task.AttemptCount)
 
 	if err != nil {
-		d.logger.Error("failed to insert dead letter task", "error", err)
+		d.logger.ErrorContext(ctx, "failed to insert dead letter task", "error", err)
 		return apperror.Internal("failed to insert dead letter task", err)
 	}
 
@@ -104,14 +104,14 @@ func (d *DeadLetterTaskRepository) MoveToDLQ(ctx context.Context, taskID uuid.UU
 	_, err = tx.Exec(ctx, deleteQuery, task.ID)
 
 	if err != nil {
-		d.logger.Error("failed to delete task", "error", err)
+		d.logger.ErrorContext(ctx, "failed to delete task", "error", err)
 		return apperror.Internal("failed to delete task", err)
 	}
 
 	err = tx.Commit(ctx)
 
 	if err != nil {
-		d.logger.Error("failed to commit transaction", "error", err)
+		d.logger.ErrorContext(ctx, "failed to commit transaction", "error", err)
 		return apperror.Internal("failed to commit transaction", err)
 	}
 
@@ -128,7 +128,7 @@ func (d *DeadLetterTaskRepository) GetAll(ctx context.Context) ([]model.DeadLett
 	rows, err := d.pgxPool.Query(ctx, query)
 
 	if err != nil {
-		d.logger.Error("failed to get all dead letter tasks", "error", err)
+		d.logger.ErrorContext(ctx, "failed to get all dead letter tasks", "error", err)
 		return nil, apperror.Internal("failed to get all dead letter tasks", err)
 	}
 	defer rows.Close()
@@ -139,18 +139,18 @@ func (d *DeadLetterTaskRepository) GetAll(ctx context.Context) ([]model.DeadLett
 		deadLetterTask, err := scanDeadLetterTask(rows)
 
 		if err != nil {
-			d.logger.Error("failed to scan dead letter task row", "error", err)
+			d.logger.ErrorContext(ctx, "failed to scan dead letter task row", "error", err)
 			return nil, apperror.Internal("failed to scan dead letter task row", err)
 		}
 		deadLetterTasks = append(deadLetterTasks, deadLetterTask)
 	}
 
 	if err := rows.Err(); err != nil {
-		d.logger.Error("failed to iterate dead letter task rows", "error", err)
+		d.logger.ErrorContext(ctx, "failed to iterate dead letter task rows", "error", err)
 		return nil, apperror.Internal("failed to iterate dead letter task rows", err)
 	}
 
-	d.logger.Info("all dead letter tasks fetched", "count", len(deadLetterTasks))
+	d.logger.InfoContext(ctx, "all dead letter tasks fetched", "count", len(deadLetterTasks))
 	return deadLetterTasks, nil
 }
 
@@ -168,15 +168,15 @@ func (d *DeadLetterTaskRepository) GetById(ctx context.Context, id uuid.UUID) (m
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			d.logger.Warn("dead letter task not found", "dead_letter_task_id", deadLetterTask.ID)
+			d.logger.WarnContext(ctx, "dead letter task not found", "dead_letter_task_id", deadLetterTask.ID)
 			return model.DeadLetterTask{}, apperror.NotFound("dead letter task not found", err)
 		}
 
-		d.logger.Error("failed to scan dead letter task", "error", err)
+		d.logger.ErrorContext(ctx, "failed to scan dead letter task", "error", err)
 		return model.DeadLetterTask{}, apperror.Internal("failed to scan dead letter task", err)
 	}
 
-	d.logger.Info("dead letter task fetched", "dead_letter_task_id", deadLetterTask.ID)
+	d.logger.InfoContext(ctx, "dead letter task fetched", "dead_letter_task_id", deadLetterTask.ID)
 	return deadLetterTask, nil
 }
 
@@ -184,7 +184,7 @@ func (d *DeadLetterTaskRepository) Retry(ctx context.Context, id uuid.UUID) (mod
 	tx, err := d.pgxPool.Begin(ctx)
 
 	if err != nil {
-		d.logger.Error("failed to begin transaction", "error", err)
+		d.logger.ErrorContext(ctx, "failed to begin transaction", "error", err)
 		return model.Task{}, apperror.Internal("failed to begin transaction", err)
 	}
 
@@ -203,11 +203,11 @@ func (d *DeadLetterTaskRepository) Retry(ctx context.Context, id uuid.UUID) (mod
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			d.logger.Warn("dead letter task not found", "dead_letter_task_id", id)
+			d.logger.WarnContext(ctx, "dead letter task not found", "dead_letter_task_id", id)
 			return model.Task{}, apperror.NotFound("dead letter task not found", err)
 		}
 
-		d.logger.Error("failed to scan dead letter task", "error", err)
+		d.logger.ErrorContext(ctx, "failed to scan dead letter task", "error", err)
 		return model.Task{}, apperror.Internal("failed to scan dead letter task", err)
 	}
 
@@ -223,7 +223,7 @@ func (d *DeadLetterTaskRepository) Retry(ctx context.Context, id uuid.UUID) (mod
 
 	err = row.Scan(&task.ID, &task.CreatedAt, &task.UpdatedAt)
 	if err != nil {
-		d.logger.Error("failed to insert task", "error", err)
+		d.logger.ErrorContext(ctx, "failed to insert task", "error", err)
 		return model.Task{}, apperror.Internal("failed to insert task", err)
 	}
 
@@ -239,14 +239,14 @@ func (d *DeadLetterTaskRepository) Retry(ctx context.Context, id uuid.UUID) (mod
 	_, err = tx.Exec(ctx, updateQuery, deadLetterTask.ID)
 
 	if err != nil {
-		d.logger.Error("failed to update dead letter task", "error", err)
+		d.logger.ErrorContext(ctx, "failed to update dead letter task", "error", err)
 		return model.Task{}, apperror.Internal("failed to update dead letter task", err)
 	}
 
 	err = tx.Commit(ctx)
 
 	if err != nil {
-		d.logger.Error("failed to commit transaction", "error", err)
+		d.logger.ErrorContext(ctx, "failed to commit transaction", "error", err)
 		return model.Task{}, apperror.Internal("failed to commit transaction", err)
 	}
 
