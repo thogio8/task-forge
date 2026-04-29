@@ -41,7 +41,7 @@ func main() {
 		log.Fatal("Failed to load config : ", err)
 	}
 
-	logger := cfg.GetSlogLogger()
+	logger := slog.New(telemetry.WrapWithTracing(cfg.GetSlogLogger().Handler()))
 	slog.SetDefault(logger)
 
 	tel, err := telemetry.Setup(context.Background(), telemetry.Config{
