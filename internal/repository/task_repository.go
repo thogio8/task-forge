@@ -14,10 +14,11 @@ import (
 	"github.com/thogio8/task-forge/internal/model"
 	"github.com/thogio8/task-forge/internal/telemetry"
 	"go.opentelemetry.io/otel/attribute"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
-var dbSystemPostgres = attribute.String("db.system", "postgresql")
+var dbSystemPostgres = semconv.DBSystemPostgreSQL
 
 type TaskRepository struct {
 	pgxPool *pgxpool.Pool
