@@ -10,6 +10,7 @@ import (
 	"github.com/thogio8/task-forge/internal/model"
 	"github.com/thogio8/task-forge/internal/telemetry"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type OutboxRepository struct {
@@ -22,7 +23,7 @@ func NewOutboxRepository(pool *pgxpool.Pool, logger *slog.Logger) *OutboxReposit
 }
 
 func (o *OutboxRepository) GetUnpublished(ctx context.Context, limit int) (outboxEvents []model.OutboxEvent, err error) {
-	ctx, span := telemetry.StartSpan(ctx, "db.outbox.get_unpublished",
+	ctx, span := telemetry.StartSpanKind(ctx, "db.outbox.get_unpublished", trace.SpanKindClient,
 		dbSystemPostgres,
 		attribute.Int("batch.size", limit),
 	)
@@ -65,7 +66,7 @@ func (o *OutboxRepository) GetUnpublished(ctx context.Context, limit int) (outbo
 }
 
 func (o *OutboxRepository) MarkPublished(ctx context.Context, ids []int64) (err error) {
-	ctx, span := telemetry.StartSpan(ctx, "db.outbox.mark_published",
+	ctx, span := telemetry.StartSpanKind(ctx, "db.outbox.mark_published", trace.SpanKindClient,
 		dbSystemPostgres,
 		attribute.Int("count", len(ids)),
 	)

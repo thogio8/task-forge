@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type OutboxPublisherRepository interface {
@@ -153,7 +154,7 @@ func (o *OutboxPublisher) publishEvent(rootCtx context.Context, event model.Outb
 		publishCtx = telemetry.ContextFromTraceparent(rootCtx, *event.TraceContext)
 	}
 
-	publishCtx, span := telemetry.StartSpan(publishCtx, "messaging.publish",
+	publishCtx, span := telemetry.StartSpanKind(publishCtx, "messaging.publish", trace.SpanKindProducer,
 		attribute.String("messaging.system", "kafka"),
 		attribute.String("messaging.destination.name", "tasks"),
 		attribute.String("messaging.operation", "publish"),

@@ -12,11 +12,24 @@ import (
 
 const tracerName = "taskforge"
 
-// StartSpan opens a child span anchored on the current span in ctx, attaches
-// the given attributes, and returns the new context and the span. The caller
-// is responsible for ending the span — typically via defer EndSpanWithError.
+// StartSpan opens an Internal-kind child span anchored on the current span in
+// ctx, attaches the given attributes, and returns the new context and span.
+// The caller is responsible for ending the span — typically via defer
+// EndSpanWithError. Use StartSpanKind for spans that should expose a specific
+// SpanKind (Server/Client/Producer/Consumer) for the OTel service-graph.
 func StartSpan(ctx context.Context, name string, attrs ...attribute.KeyValue) (context.Context, trace.Span) {
 	return otel.Tracer(tracerName).Start(ctx, name, trace.WithAttributes(attrs...))
+}
+
+// StartSpanKind opens a child span with an explicit SpanKind. Convention:
+// Server for HTTP server handlers, Client for outbound DB/HTTP calls, Producer
+// for messaging publish, Consumer for messaging receive. Tempo/Grafana use
+// SpanKind to derive service graphs and infer client/server boundaries.
+func StartSpanKind(ctx context.Context, name string, kind trace.SpanKind, attrs ...attribute.KeyValue) (context.Context, trace.Span) {
+	return otel.Tracer(tracerName).Start(ctx, name,
+		trace.WithSpanKind(kind),
+		trace.WithAttributes(attrs...),
+	)
 }
 
 // EndSpanWithError ends a span and, if *errPtr is non-nil, records it and

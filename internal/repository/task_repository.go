@@ -14,6 +14,7 @@ import (
 	"github.com/thogio8/task-forge/internal/model"
 	"github.com/thogio8/task-forge/internal/telemetry"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var dbSystemPostgres = attribute.String("db.system", "postgresql")
@@ -32,7 +33,7 @@ func NewTaskRepository(pool *pgxpool.Pool, logger *slog.Logger) *TaskRepository 
 }
 
 func (t *TaskRepository) Create(ctx context.Context, task *model.Task) (created bool, err error) {
-	ctx, span := telemetry.StartSpan(ctx, "db.task.create",
+	ctx, span := telemetry.StartSpanKind(ctx, "db.task.create", trace.SpanKindClient,
 		dbSystemPostgres,
 		attribute.String("db.operation", "INSERT"),
 	)
@@ -126,7 +127,7 @@ func (t *TaskRepository) Create(ctx context.Context, task *model.Task) (created 
 }
 
 func (t *TaskRepository) GetAll(ctx context.Context) (tasks []model.Task, err error) {
-	ctx, span := telemetry.StartSpan(ctx, "db.task.get_all", dbSystemPostgres)
+	ctx, span := telemetry.StartSpanKind(ctx, "db.task.get_all", trace.SpanKindClient, dbSystemPostgres)
 	defer telemetry.EndSpanWithError(span, &err)
 
 	query := `
@@ -164,7 +165,7 @@ func (t *TaskRepository) GetAll(ctx context.Context) (tasks []model.Task, err er
 }
 
 func (t *TaskRepository) GetById(ctx context.Context, id uuid.UUID) (task model.Task, err error) {
-	ctx, span := telemetry.StartSpan(ctx, "db.task.get_by_id",
+	ctx, span := telemetry.StartSpanKind(ctx, "db.task.get_by_id", trace.SpanKindClient,
 		dbSystemPostgres,
 		attribute.String("task.id", id.String()),
 	)
@@ -196,7 +197,7 @@ func (t *TaskRepository) GetById(ctx context.Context, id uuid.UUID) (task model.
 }
 
 func (t *TaskRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status string) (err error) {
-	ctx, span := telemetry.StartSpan(ctx, "db.task.update_status",
+	ctx, span := telemetry.StartSpanKind(ctx, "db.task.update_status", trace.SpanKindClient,
 		dbSystemPostgres,
 		attribute.String("task.id", id.String()),
 		attribute.String("task.status", status),
@@ -222,7 +223,7 @@ func (t *TaskRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status 
 }
 
 func (t *TaskRepository) ClaimTasks(ctx context.Context, workerID string, limit int) (tasks []model.Task, err error) {
-	ctx, span := telemetry.StartSpan(ctx, "db.task.claim_batch",
+	ctx, span := telemetry.StartSpanKind(ctx, "db.task.claim_batch", trace.SpanKindClient,
 		dbSystemPostgres,
 		attribute.String("worker.id", workerID),
 		attribute.Int("claim.batch_size", limit),
@@ -301,7 +302,7 @@ func (t *TaskRepository) ClaimTasks(ctx context.Context, workerID string, limit 
 }
 
 func (t *TaskRepository) ClaimTask(ctx context.Context, workerID string, taskID uuid.UUID) (task *model.Task, err error) {
-	ctx, span := telemetry.StartSpan(ctx, "db.task.claim",
+	ctx, span := telemetry.StartSpanKind(ctx, "db.task.claim", trace.SpanKindClient,
 		dbSystemPostgres,
 		attribute.String("worker.id", workerID),
 		attribute.String("task.id", taskID.String()),
@@ -336,7 +337,7 @@ func (t *TaskRepository) ClaimTask(ctx context.Context, workerID string, taskID 
 }
 
 func (t *TaskRepository) CompleteTask(ctx context.Context, id uuid.UUID) (err error) {
-	ctx, span := telemetry.StartSpan(ctx, "db.task.complete",
+	ctx, span := telemetry.StartSpanKind(ctx, "db.task.complete", trace.SpanKindClient,
 		dbSystemPostgres,
 		attribute.String("task.id", id.String()),
 	)
@@ -361,7 +362,7 @@ func (t *TaskRepository) CompleteTask(ctx context.Context, id uuid.UUID) (err er
 
 func (t *TaskRepository) FailTask(ctx context.Context, id uuid.UUID, errMsg string, nextRetryAt *time.Time) (err error) {
 	willRetry := nextRetryAt != nil
-	ctx, span := telemetry.StartSpan(ctx, "db.task.fail",
+	ctx, span := telemetry.StartSpanKind(ctx, "db.task.fail", trace.SpanKindClient,
 		dbSystemPostgres,
 		attribute.String("task.id", id.String()),
 		attribute.Bool("task.will_retry", willRetry),

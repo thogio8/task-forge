@@ -14,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type MessageReader interface {
@@ -110,7 +111,7 @@ func (c *Consumer) processMessage(ctx context.Context, msg kafkago.Message) {
 	carrier := telemetry.KafkaHeaderCarrier(msg.Headers)
 	parentCtx := otel.GetTextMapPropagator().Extract(ctx, &carrier)
 
-	spanCtx, span := telemetry.StartSpan(parentCtx, "messaging.receive",
+	spanCtx, span := telemetry.StartSpanKind(parentCtx, "messaging.receive", trace.SpanKindConsumer,
 		attribute.String("messaging.system", "kafka"),
 		attribute.String("messaging.destination.name", "tasks"),
 		attribute.String("messaging.operation", "receive"),
