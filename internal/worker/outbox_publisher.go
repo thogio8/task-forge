@@ -11,7 +11,6 @@ import (
 	kafkago "github.com/segmentio/kafka-go"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -117,8 +116,7 @@ func (o *OutboxPublisher) processCycle(ctx context.Context) {
 	outboxEvents, err := o.repo.GetUnpublished(cycleCtx, o.batchSize)
 
 	if err != nil {
-		cycleSpan.RecordError(err)
-		cycleSpan.SetStatus(codes.Error, err.Error())
+		telemetry.SpanError(cycleSpan, err)
 		o.logger.Error("failed to retrieve unpublished outbox events", "worker_id", o.workerID, "error", err)
 		return
 	}
@@ -133,8 +131,7 @@ func (o *OutboxPublisher) processCycle(ctx context.Context) {
 
 	if len(outboxEventsIDs) > 0 {
 		if err := o.repo.MarkPublished(cycleCtx, outboxEventsIDs); err != nil {
-			cycleSpan.RecordError(err)
-			cycleSpan.SetStatus(codes.Error, err.Error())
+			telemetry.SpanError(cycleSpan, err)
 			o.logger.Error("failed to mark outbox events as published", "worker_id", o.workerID, "error", err)
 			return
 		}
@@ -175,8 +172,7 @@ func (o *OutboxPublisher) publishEvent(rootCtx context.Context, event model.Outb
 	o.publishDuration.Record(publishCtx, time.Since(start).Seconds())
 
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		telemetry.SpanError(span, err)
 		o.logger.Error("failed to publish outbox event", "worker_id", o.workerID, "outbox_event_id", event.ID, "error", err)
 		o.errorsCounter.Add(publishCtx, 1)
 		return

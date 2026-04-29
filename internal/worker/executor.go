@@ -160,8 +160,7 @@ func (e *Executor) Execute(ctx context.Context, task model.Task) {
 			errorType = "timeout"
 		}
 
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		telemetry.SpanError(span, err)
 		span.SetAttributes(attribute.String("error.type", errorType))
 
 		if task.AttemptCount+1 < task.MaxRetries {
@@ -200,8 +199,7 @@ func (e *Executor) Execute(ctx context.Context, task model.Task) {
 
 	completeErr := e.repo.CompleteTask(ctx, task.ID)
 	if completeErr != nil {
-		span.RecordError(completeErr)
-		span.SetStatus(codes.Error, completeErr.Error())
+		telemetry.SpanError(span, completeErr)
 		e.logger.Error("failed to mark task as completed", "task_id", task.ID, "error", completeErr)
 		return
 	}

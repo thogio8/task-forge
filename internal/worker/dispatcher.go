@@ -9,7 +9,6 @@ import (
 	"github.com/thogio8/task-forge/internal/telemetry"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
 )
 
@@ -95,8 +94,7 @@ func (d *Dispatcher) runCycle(ctx context.Context) {
 	d.pollDuration.Record(cycleCtx, time.Since(start).Seconds())
 
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		telemetry.SpanError(span, err)
 		d.logger.Error("failed to claim tasks", "error", err)
 		return
 	}

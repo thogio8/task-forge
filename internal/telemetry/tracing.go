@@ -49,6 +49,18 @@ func EndSpanWithError(span trace.Span, errPtr *error) {
 	span.End()
 }
 
+// SpanError records an error on a span and sets its status to Error. No-op
+// when err is nil. Use when the span outlives the current function (per-event
+// loops, void-return functions, multi-stage flows) where the named-return
+// EndSpanWithError pattern does not apply.
+func SpanError(span trace.Span, err error) {
+	if err == nil {
+		return
+	}
+	span.RecordError(err)
+	span.SetStatus(codes.Error, err.Error())
+}
+
 // ExtractTraceparent serializes the W3C Trace Context from ctx into the
 // "traceparent" header value. Returns nil when no active span exists in ctx,
 // allowing callers to store NULL in DB columns rather than empty strings.

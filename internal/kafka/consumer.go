@@ -153,8 +153,7 @@ func (c *Consumer) processMessage(ctx context.Context, msg kafkago.Message) {
 	c.claimDuration.Record(spanCtx, time.Since(start).Seconds())
 
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+		telemetry.SpanError(span, err)
 		c.logger.Error("failed to claim task from kafka event", "worker_id", c.workerID, "task_id", taskID, "error", err)
 		return
 	}
