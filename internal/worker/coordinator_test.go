@@ -154,12 +154,13 @@ func TestCoordinator_StopsOnContextCancel(t *testing.T) {
 
 	time.Sleep(40 * time.Millisecond)
 	cancel()
+	c.Stop()
 
 	before := leader.tryCalls.Load()
-	time.Sleep(60 * time.Millisecond)
+	time.Sleep(40 * time.Millisecond)
 	after := leader.tryCalls.Load()
 
 	if after != before {
-		t.Errorf("coordinator continued after ctx cancel: before=%d after=%d", before, after)
+		t.Errorf("coordinator continued after Stop returned: before=%d after=%d", before, after)
 	}
 }

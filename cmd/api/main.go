@@ -204,6 +204,9 @@ func main() {
 	cancel()
 	kafkaConsumerCancel()
 
+	coordinator.Stop()
+	logger.Info("coordinator stopped")
+
 	outboxPublisher.Stop()
 	logger.Info("outbox publisher stopped")
 

@@ -25,6 +25,7 @@ type Coordinator struct {
 	staleInterval    time.Duration
 	staleDuration    time.Duration
 	logger           *slog.Logger
+	done             chan struct{}
 }
 
 func NewCoordinator(
@@ -50,6 +51,7 @@ func NewCoordinator(
 		staleInterval:    staleInterval,
 		staleDuration:    staleDuration,
 		logger:           logger,
+		done:             make(chan struct{}),
 	}
 }
 
@@ -84,8 +86,13 @@ func (c *Coordinator) Start(ctx context.Context) {
 					c.logger.InfoContext(ctx, "lost leadership")
 				}
 			case <-ctx.Done():
+				close(c.done)
 				return
 			}
 		}
 	}()
+}
+
+func (c *Coordinator) Stop() {
+	<-c.done
 }
