@@ -104,7 +104,7 @@ func TestCoordinator_AcquireFlipsIsLeaderTrue(t *testing.T) {
 	c.Start(ctx)
 
 	time.Sleep(60 * time.Millisecond)
-	if !c.isLeader {
+	if !c.isLeader.Load() {
 		t.Error("expected isLeader=true after successful acquire")
 	}
 	cancel()
@@ -121,7 +121,7 @@ func TestCoordinator_LosingLeadershipCancelsChildContext(t *testing.T) {
 	// Give the loop time to acquire then lose.
 	time.Sleep(120 * time.Millisecond)
 
-	if c.isLeader {
+	if c.isLeader.Load() {
 		t.Error("expected isLeader=false after losing leadership")
 	}
 	cancel()
@@ -140,7 +140,7 @@ func TestCoordinator_AcquireErrorSkipsCycleKeepsRunning(t *testing.T) {
 	if got := leader.tryCalls.Load(); got < 2 {
 		t.Errorf("expected loop to keep ticking despite errors, got %d calls", got)
 	}
-	if c.isLeader {
+	if c.isLeader.Load() {
 		t.Error("must not flip to isLeader=true on error")
 	}
 }

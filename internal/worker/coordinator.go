@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"log/slog"
+	"sync/atomic"
 	"time"
 )
 
@@ -16,7 +17,7 @@ type Coordinator struct {
 	instanceRepo     InstanceMonitorRepository
 	taskRepo         TaskRecoveryRepository
 	staleRepo        StaleCleanerRepository
-	isLeader         bool
+	isLeader         atomic.Bool
 	leaderCancel     context.CancelFunc
 	leaderInterval   time.Duration
 	monitorInterval  time.Duration
@@ -66,8 +67,8 @@ func (c *Coordinator) Start(ctx context.Context) {
 					continue
 				}
 
-				if acquired && !c.isLeader {
-					c.isLeader = true
+				if acquired && !c.isLeader.Load() {
+					c.isLeader.Store(true)
 					c.logger.InfoContext(ctx, "acquired leadership")
 
 					leaderCtx, cancel := context.WithCancel(ctx)
@@ -77,8 +78,8 @@ func (c *Coordinator) Start(ctx context.Context) {
 					StartStaleCleaner(leaderCtx, c.staleRepo, c.staleInterval, c.staleDuration, c.logger)
 				}
 
-				if !acquired && c.isLeader {
-					c.isLeader = false
+				if !acquired && c.isLeader.Load() {
+					c.isLeader.Store(false)
 					c.leaderCancel()
 					c.logger.InfoContext(ctx, "lost leadership")
 				}
