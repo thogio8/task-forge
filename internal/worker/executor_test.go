@@ -230,6 +230,19 @@ func TestCalculateBackoff(t *testing.T) {
 	}
 }
 
+func TestCalculateBackoff_HighAttemptDoesNotPanic(t *testing.T) {
+	maxWithJitter := 5*time.Minute + 5*time.Minute/10
+	minWithJitter := 5*time.Minute - 5*time.Minute/10
+
+	for _, attempt := range []int{34, 35, 50, 100, 1000, 1 << 30} {
+		backoff := calculateBackoff(attempt)
+		if backoff < minWithJitter || backoff > maxWithJitter {
+			t.Fatalf("attempt=%d: expected backoff in [%v, %v], got %v",
+				attempt, minWithJitter, maxWithJitter, backoff)
+		}
+	}
+}
+
 func TestExecute_PermanentFailure_MovesToDLQ(t *testing.T) {
 	mock := &mockRepo{}
 	mockDLQ := &mockDLQRepo{}

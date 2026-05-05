@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"math/bits"
 	"math/rand"
 	"time"
 
@@ -211,14 +212,22 @@ func (e *Executor) Execute(ctx context.Context, task model.Task) {
 	))
 }
 
+// calculateBackoff returns an exponential backoff duration with jitter,
+// capped at maxBackOff. attempt must be >= 1.
 func calculateBackoff(attempt int) time.Duration {
 	base := 1 * time.Second
 
-	backOff := base * time.Duration(1<<(attempt-1))
-
 	maxBackOff := 5 * time.Minute
-	if backOff > maxBackOff {
+
+	var backOff time.Duration
+
+	if attempt >= bits.LeadingZeros64(uint64(base)) {
 		backOff = maxBackOff
+	} else {
+		backOff = base * time.Duration(1<<(attempt-1))
+		if backOff > maxBackOff {
+			backOff = maxBackOff
+		}
 	}
 
 	jitter := time.Duration(rand.Int63n(int64(backOff/5))) - backOff/10
