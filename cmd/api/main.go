@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"log/slog"
@@ -31,14 +32,20 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		slog.Error("startup failed", "error", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found, using environment variables")
 	}
 
 	cfg, err := config.Load()
-
 	if err != nil {
-		log.Fatal("Failed to load config : ", err)
+		return fmt.Errorf("load config: %w", err)
 	}
 
 	logger := slog.New(telemetry.WrapWithTracing(cfg.GetSlogLogger().Handler()))
@@ -51,19 +58,16 @@ func main() {
 		TraceSampleRatio:  cfg.OtelTraceSampleRatio,
 	})
 	if err != nil {
-		logger.Error("Failed to setup telemetry", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("setup telemetry: %w", err)
 	}
 
 	db, err := pgxpool.New(context.Background(), cfg.DatabaseURL())
 	if err != nil {
-		logger.Error("Failed to connect to DB", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("connect to DB: %w", err)
 	}
 
 	if err := db.Ping(context.Background()); err != nil {
-		logger.Error("Cannot reach DB", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("ping DB: %w", err)
 	}
 
 	logger.Info("DB Connected")
@@ -77,10 +81,8 @@ func main() {
 	instanceRepo := repository.NewInstanceRepository(db, logger, 1)
 
 	staleInstances, err := instanceRepo.GetStaleInstances(context.Background(), cfg.HeartbeatTimeout)
-
 	if err != nil {
-		logger.Error("failed to get stale instances", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("get stale instances: %w", err)
 	}
 
 	for _, staleInstance := range staleInstances {
@@ -120,8 +122,7 @@ func main() {
 
 	workerID := fmt.Sprintf("%s-%d-%s", hostName, os.Getpid(), uuid.New().String()[:8])
 
-	err = instanceRepo.Register(context.Background(), workerID)
-	if err != nil {
+	if err := instanceRepo.Register(context.Background(), workerID); err != nil {
 		logger.Error("failed to register instance", "error", err)
 	}
 
@@ -179,18 +180,24 @@ func main() {
 		IdleTimeout:  120 * time.Second,
 	}
 
+	httpErrCh := make(chan error, 1)
 	go func() {
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error("http server error", "error", err)
-			os.Exit(1)
+		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			httpErrCh <- err
 		}
 	}()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
 
-	logger.Info("shutting down server")
+	var runErr error
+	select {
+	case <-quit:
+		logger.Info("shutting down server")
+	case err := <-httpErrCh:
+		logger.Error("http server failed", "error", err)
+		runErr = fmt.Errorf("http server: %w", err)
+	}
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer shutdownCancel()
@@ -224,7 +231,7 @@ func main() {
 	}
 	logger.Info("telemetry stopped")
 
-	if err = kafkaProducer.Close(); err != nil {
+	if err := kafkaProducer.Close(); err != nil {
 		logger.Error("failed to close kafka producer", "error", err)
 	}
 	logger.Info("kafka producer stopped")
@@ -240,4 +247,6 @@ func main() {
 
 	db.Close()
 	logger.Info("server stopped")
+
+	return runErr
 }
